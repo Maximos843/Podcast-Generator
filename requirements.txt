@@ -1,0 +1,8 @@
+numpy==1.26.4
+tqdm==4.67.1
+sentence-transformers==5.2.0
+qdrant_client==1.16.2
+openai==2.15.0
+pandas==2.0.2
+yandex-cloud-ml-sdk==0.17.1
+python-dotenv
