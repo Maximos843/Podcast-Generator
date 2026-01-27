@@ -1,46 +1,21 @@
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 
-@dataclass
-class Article:
-    page_path: str
-    page_idx: int
-    article_id: str          # "0", "1", ...
-    year: Optional[int]
-    original_text: str       # как в JSON
-    cleaned_text: str        # после предобработки
-
-
-@dataclass
-class Chunk:
-    article: Article
-    chunk_id: int
-    text: str                # текст чанка (очищенный)
-
-
-@dataclass
+@dataclass(frozen=True)
 class QDrantConfig:
-    COLLECTION_NAME: str = "newspapers_chunks"
-    EMBEDDING_DIM: int = 768
-    QDRANT_DATA_PATH: str = "qdrant_data"
+    # --- hybrid (named vectors) ---
+    DENSE_VECTOR_NAME: str = "dense"
+    BM25_VECTOR_NAME: str = "bm25"
+    BM25_MODEL: str = "Qdrant/bm25"
+
+    # --- retrieve defaults ---
+    PREFETCH_K: int = 150
+    CANDIDATE_POOL_CHUNKS_FAST: int = 50
+    CANDIDATE_POOL_CHUNKS_QUALITY: int = 75
+    TOP_K_ARTICLES_FAST: int = 7
+    TOP_K_ARTICLES_QUALITY: int = 7
+    PER_ARTICLE_TOP_CHUNKS: int = 3
 
 
-@dataclass
-class EvalQuery:
-    query_text: str
-    relevant_articles: set[str]
-    source: str # "golden_set", "synthetic_simple", "synthetic_hard", "qa", ...
-    relevance_grades: Optional[dict[str, int]] = None
-
-
-@dataclass
-class EvalMetrics:
-    mrr: float
-    hit_at_k: float
-    recall_at_k: float
-    precision_at_k: float
-
-
-YEAR_RE = re.compile(r'_(\d{4})_')
+YEAR_RE = re.compile(r"_(\d{4})_")
