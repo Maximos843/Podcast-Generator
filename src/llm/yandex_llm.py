@@ -6,6 +6,9 @@ from typing import Optional
 import time
 
 from openai import OpenAI
+import logging
+
+logger = logging.getLogger("rag-llm")
 
 
 @dataclass
@@ -52,7 +55,27 @@ class YandexGPT5Client:
                         {"role": "user", "content": prompt},
                     ],
                 )
-                return resp.choices[0].message.content
+                content = resp.choices[0].message.content
+
+                usage = getattr(resp, "usage", None)
+                if usage is not None:
+                    # openai SDK обычно даёт usage.prompt_tokens / completion_tokens / total_tokens
+                    logger.info(
+                        "llm_usage",
+                        extra={
+                            "model": self.model_uri,
+                            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                            "completion_tokens": getattr(usage, "completion_tokens", None),
+                            "total_tokens": getattr(usage, "total_tokens", None),
+                            "max_tokens": self.cfg.max_tokens,
+                            # стадия берётся из system (мы добавили STAGE:...):
+                            "stage": system.splitlines()[0].replace("STAGE:", "").strip() if system.startswith("STAGE:") else "unknown",
+                            "prompt_chars": len(prompt),
+                            "system_chars": len(system or ""),
+                        },
+                    )
+
+                return content
             except Exception as e:
                 last_err = e
                 if attempt < self.cfg.max_retries:

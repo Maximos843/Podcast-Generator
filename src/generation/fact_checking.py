@@ -1,116 +1,145 @@
 # src/generation/fact_checking.py
 from __future__ import annotations
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Union
 import json
+import logging
 
-from src.domain.contracts import Fact, FactCard, FactCheckReport
+from src.domain.contracts import Fact, FactCard, FactCheckReport, RetrievedArticleHit
 from src.generation.json_extract import extract_json_object
-from src.domain.contracts import RetrievedArticleHit
 from src.llm.base import LLM
 
+logger = logging.getLogger("rag-service")
 
-def build_fact_card_prompt(article_id: str, year: Optional[int], text: str, best_chunks: List[str]) -> str:
-    return f"""Извлеки факты из газетной статьи (1930-е, русский язык).
-Правила:
-1) НЕ добавляй фактов/деталей, которых нет в тексте.
-2) Каждый факт должен иметь доказательство: короткую цитату (<= 25 слов) из текста.
-3) Факт должен быть атомарным (одно утверждение).
-4) Если в тексте нет явной даты/места — не выдумывай.
+# --- Настройки батча ---
+FACT_CONTEXT_MAX_CHUNKS = 4
+FACT_CONTEXT_MAX_CHARS_PER_ARTICLE = 2200   # ↓ меньше, чтобы батч не раздувался
+FACT_BATCH_MAX_ARTICLES = 4                 # сколько статей пакуем в батч (обычно = max_articles)
 
-Верни строго ОДИН JSON:
+HitT = Union[Dict[str, Any], RetrievedArticleHit]
 
+
+def _extract_hit_fields(hit: HitT) -> Tuple[str, Optional[int], List[str]]:
+    """
+    Возвращает: (article_id, year, best_chunks_texts)
+    Поддерживает dict и RetrievedArticleHit.
+    """
+    if isinstance(hit, RetrievedArticleHit):
+        aid = hit.article_id
+        year = hit.year
+        best_chunks = [c.text for c in (hit.best_chunks or []) if c.text]
+        return aid, year, best_chunks
+
+    aid = hit.get("article_id")
+    year = hit.get("year")
+    best_chunks = [c.get("text", "") for c in hit.get("best_chunks", []) if c.get("text")]
+    return aid, year, best_chunks
+
+
+def _normalize_context(best_chunks_texts: List[str]) -> str:
+    chunks = [c.strip() for c in best_chunks_texts if c and c.strip()][:FACT_CONTEXT_MAX_CHUNKS]
+    return ("\n\n".join(chunks))[:FACT_CONTEXT_MAX_CHARS_PER_ARTICLE]
+
+
+def build_fact_cards_batch_prompt(hits: List[HitT]) -> str:
+    """
+    В prompt чётко разделяем статьи, запрещаем смешивать источники.
+    """
+    blocks = []
+    for i, h in enumerate(hits, start=1):
+        aid, year, best_chunks = _extract_hit_fields(h)
+        ctx = _normalize_context(best_chunks)
+        if not aid or not ctx.strip():
+            continue
+        blocks.append(
+            {
+                "slot": f"A{i}",
+                "article_id": aid,
+                "year": year,
+                "context": ctx,
+            }
+        )
+
+    return f"""Ты извлекаешь факты из фрагментов газетных статей (1930-е, русский язык).
+ВАЖНО:
+- НЕЛЬЗЯ смешивать источники: факты внутри карточки должны быть ТОЛЬКО из её контекста.
+- НЕЛЬЗЯ добавлять детали, которых нет в контексте.
+- Каждый факт обязан иметь короткую дословную цитату (<= 25 слов) из соответствующего контекста.
+- fact_id должен быть вида A#-F# (например A1-F1, A1-F2...) где A# соответствует номеру блока.
+
+Верни строго JSON (без текста вокруг):
 {{
-  "article_id": "{article_id}",
-  "year": {year if year is not None else "null"},
-  "title_guess": null,
-  "facts": [
+  "cards": [
     {{
-      "fact_id": "A1-F1",
-      "statement": "атомарный факт",
-      "evidence_quote": "точная цитата из текста"
+      "slot": "A1",
+      "article_id": "...",
+      "year": 1934,
+      "title_guess": null,
+      "facts": [
+        {{
+          "fact_id": "A1-F1",
+          "statement": "атомарный факт",
+          "evidence_quote": "короткая цитата из A1"
+        }}
+      ]
     }}
   ]
 }}
 
-ARTICLE_ID: {article_id}
-YEAR: {year}
-
-Подсказка по теме (самые релевантные фрагменты из retrieval):
-{chr(10).join([f"- {c}" for c in best_chunks if c.strip()])}
-
-Текст статьи:
-{text}
+БЛОКИ (каждый блок — отдельная статья, используй факты только из её контекста):
+{json.dumps(blocks, ensure_ascii=False)}
 """
 
 
-def build_fact_card(
-    llm: LLM,
-    article_id: str,
-    year: Optional[int],
-    full_text: str,
-    best_chunks_texts: List[str],
-    fact_id_prefix: str,
-) -> FactCard:
-    prompt = build_fact_card_prompt(article_id, year, full_text, best_chunks_texts)
-    out = llm.generate(prompt, system="Ты — строгий факт-экстрактор. Никаких выдумок.")
-    obj = extract_json_object(out)
-
-    facts: List[Fact] = []
-    for i, f in enumerate(obj.get("facts", []), start=1):
-        fid = f.get("fact_id") or f"{fact_id_prefix}-F{i}"
-        facts.append(
-            Fact(
-                fact_id=fid,
-                statement=str(f["statement"]).strip(),
-                evidence_quote=str(f["evidence_quote"]).strip(),
-                article_id=article_id,
-            )
-        )
-
-    return FactCard(
-        article_id=article_id,
-        year=obj.get("year", year),
-        title_guess=obj.get("title_guess"),
-        facts=facts,
-    )
-
-
-from src.domain.contracts import RetrievedArticleHit
-
 def build_fact_cards_for_retrieved(
     llm: LLM,
-    article_store,
-    retrieved_articles: list[RetrievedArticleHit],
+    article_store,  # оставляем для совместимости; не используем
+    retrieved_articles: List[HitT],
     max_articles: int = 7,
-) -> list[FactCard]:
-    fact_cards: list[FactCard] = []
+) -> List[FactCard]:
+    # для батча обычно хватает 3-4 статей, но берём min(max_articles, FACT_BATCH_MAX_ARTICLES)
+    hits = retrieved_articles[: min(max_articles, FACT_BATCH_MAX_ARTICLES)]
+    prompt = build_fact_cards_batch_prompt(hits)
 
-    hits = retrieved_articles[:max_articles]
-    ids = [h.article_id for h in hits]
-    records = article_store.get_many(ids)  # <-- батч
+    out = llm.generate(
+        prompt,
+        system="STAGE:FACTS\nТы — строгий факт-экстрактор. Никаких выдумок. Только JSON.",
+    )
+    obj = extract_json_object(out)
+    cards_in = obj.get("cards", [])
 
-    for idx, hit in enumerate(hits, start=1):
-        aid = hit.article_id
-        rec = records.get(aid)
-        if rec is None:
+    fact_cards: List[FactCard] = []
+    for c in cards_in:
+        aid = c.get("article_id")
+        if not aid:
             continue
 
-        best_chunks = [c.text for c in hit.best_chunks if c.text]
-        card = build_fact_card(
-            llm=llm,
+        facts: List[Fact] = []
+        for f in c.get("facts", []) or []:
+            # минимальная защита от пустых полей
+            st = str(f.get("statement", "")).strip()
+            ev = str(f.get("evidence_quote", "")).strip()
+            fid = str(f.get("fact_id", "")).strip()
+            if not (st and ev and fid):
+                continue
+            facts.append(Fact(
+                fact_id=fid,
+                statement=st,
+                evidence_quote=ev,
+                article_id=aid,
+            ))
+
+        fact_cards.append(FactCard(
             article_id=aid,
-            year=rec.year,
-            full_text=rec.cleaned_text,
-            best_chunks_texts=best_chunks,
-            fact_id_prefix=f"A{idx}",
-        )
-        fact_cards.append(card)
+            year=c.get("year"),
+            title_guess=c.get("title_guess"),
+            facts=facts,
+        ))
 
     return fact_cards
 
 
-
+# --- fact check (оставляем как было, только stage полезно) ---
 def build_fact_check_prompt(script: str, fact_cards: List[FactCard]) -> str:
     facts_flat = []
     for card in fact_cards:
@@ -149,6 +178,6 @@ def build_fact_check_prompt(script: str, fact_cards: List[FactCard]) -> str:
 
 def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard]) -> FactCheckReport:
     prompt = build_fact_check_prompt(script, fact_cards)
-    out = llm.generate(prompt, system="Ты — строгий фактчекер. Минимум фантазии.")
+    out = llm.generate(prompt, system="STAGE:FACTCHECK\nТы — строгий фактчекер. Минимум фантазии.")
     obj = extract_json_object(out)
     return FactCheckReport.model_validate(obj)

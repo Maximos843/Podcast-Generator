@@ -1,44 +1,36 @@
 # src/generation/script_generation.py
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import json
+import re
 
-from src.domain.contracts import FactCard, Outline
-from src.generation.json_extract import extract_json_object
+from src.domain.contracts import FactCard
 from src.llm.base import LLM
 
 
-def build_outline_prompt(query: str, fact_cards: List[FactCard]) -> str:
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    fenced = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.S | re.I)
+    if fenced:
+        return json.loads(fenced.group(1))
+
+    l = text.find("{")
+    r = text.rfind("}")
+    if l == -1 or r == -1 or r <= l:
+        raise ValueError(f"Cannot find JSON object in LLM output. Head: {text[:200]}")
+    return json.loads(text[l:r+1])
+
+
+def build_outline_and_script_prompt(query: str, fact_cards: List[FactCard]) -> str:
+    # compact facts for outline
     compact = []
+    facts_flat = []
     for c in fact_cards:
         compact.append({
             "article_id": c.article_id,
             "year": c.year,
             "facts": [f.statement for f in c.facts],
         })
-
-    return f"""Составь план выпуска подкаста в стиле ведущего 1930-х годов.
-Тема запроса: {query}
-
-Правила:
-- Используй только факты из списка.
-- План должен быть на 5–8 блоков с короткими названиями и 1–2 предложениями описания.
-- Верни строго JSON:
-{{
-  "outline": [
-    {{"title": "...", "goal": "...", "facts_used": ["A1-F1", "A2-F3"]}}
-  ]
-}}
-
-ФАКТЫ (без цитат):
-{json.dumps(compact, ensure_ascii=False)}
-"""
-
-
-def build_script_prompt(query: str, outline_obj: Dict[str, Any], fact_cards: List[FactCard]) -> str:
-    facts_flat = []
-    for c in fact_cards:
         for f in c.facts:
             facts_flat.append({"fact_id": f.fact_id, "statement": f.statement})
 
@@ -52,32 +44,48 @@ def build_script_prompt(query: str, outline_obj: Dict[str, Any], fact_cards: Lis
 
 Тема: {query}
 
-Используй только факты ниже. Вставляй ссылки на факты в квадратных скобках прямо в тексте, например: [A1-F3].
+Требования:
+1) Сначала составь OUTLINE (5–8 блоков).
+2) Затем напиши SCRIPT (4–7 минут текста).
+3) Используй только факты из FACTS.
+4) Вставляй ссылки на факты в квадратных скобках прямо в тексте, например: [A1-F3].
+5) Не выдумывай детали. Если фактов не хватает — формулируй осторожно и без новых утверждений.
 
-OUTLINE (JSON):
-{json.dumps(outline_obj, ensure_ascii=False)}
+Верни строго JSON:
+{{
+  "outline": [
+    {{"title": "...", "goal": "...", "facts_used": ["A1-F1", "A2-F3"]}}
+  ],
+  "script": "..."
+}}
 
-ФАКТЫ:
+FACTS_FOR_OUTLINE (сгруппировано):
+{json.dumps(compact, ensure_ascii=False)}
+
+FACTS (плоский список для ссылок):
 {json.dumps(facts_flat, ensure_ascii=False)}
-
-Напиши цельный сценарий подкаста (примерно 4–7 минут текста)."""
-
-
-def generate_outline(llm: LLM, query: str, fact_cards: List[FactCard]) -> Outline:
-    prompt = build_outline_prompt(query, fact_cards)
-    out = llm.generate(prompt, system="Ты — редактор, который строит план выпуска.")
-    obj = extract_json_object(out)
-    return Outline.model_validate(obj)
+"""
 
 
-def generate_script(llm: LLM, query: str, outline: Outline, fact_cards: List[FactCard]) -> str:
-    prompt = build_script_prompt(query, outline.model_dump(), fact_cards)
-    return llm.generate(prompt, system="Ты — диктор 1930-х. Но ты строго следуешь фактам.")
+def generate_outline_and_script(llm: LLM, query: str, fact_cards: List[FactCard]) -> Tuple[Dict[str, Any], str]:
+    prompt = build_outline_and_script_prompt(query, fact_cards)
+    out = llm.generate(
+        prompt,
+        system="STAGE:SCRIPT\nТы — редактор и диктор. Сначала план, затем сценарий. Строго по фактам. Только JSON.",
+    )
+    obj = _extract_json_object(out)
+
+    outline = obj.get("outline") or []
+    script = obj.get("script") or ""
+    if not script.strip():
+        raise ValueError("LLM returned empty script")
+
+    return {"outline": outline}, str(script)
 
 
-def build_script_prompt_strict_refs(query: str, outline_obj: dict, fact_cards: list[FactCard]) -> str:
-    # тот же prompt, но добавим жёсткое правило
-    base = build_script_prompt(query, outline_obj, fact_cards)
+def build_outline_and_script_prompt_strict_refs(query: str, fact_cards: List[FactCard]) -> str:
+    base = build_outline_and_script_prompt(query, fact_cards)
+
     known = []
     for c in fact_cards:
         for f in c.facts:

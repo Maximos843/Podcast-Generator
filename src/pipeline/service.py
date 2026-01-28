@@ -8,10 +8,11 @@ from typing import Any, Optional
 from src.domain.contracts import PipelineRequest, PipelineResponse, PipelineTimingsMs
 from src.retrieval.qdrant_retriever import QdrantRetriever
 from src.generation.fact_checking import build_fact_cards_for_retrieved, fact_check_script
-from src.generation.script_generation import generate_outline, generate_script
 from src.generation.fact_refs import check_fact_refs
-from src.generation.script_generation import build_script_prompt_strict_refs
+from src.generation.script_generation import build_outline_and_script_prompt_strict_refs
 from src.pipeline.policy import apply_policy
+from src.generation.script_generation import generate_outline_and_script
+
 
 
 @dataclass(frozen=True)
@@ -54,13 +55,15 @@ class PipelineService:
         timings.fact_cards_ms = int((perf_counter() - t) * 1000)
 
         t = perf_counter()
-        outline = generate_outline(self.deps.llm, req.query, fact_cards)
-        script = generate_script(self.deps.llm, req.query, outline, fact_cards)
+        #outline = generate_outline(self.deps.llm, req.query, fact_cards)
+        #script = generate_script(self.deps.llm, req.query, outline, fact_cards)
+        outline, script = generate_outline_and_script(self.deps.llm, req.query, fact_cards)
+
         timings.generation_ms = int((perf_counter() - t) * 1000)
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             # 1 retry: перегенерить сценарий со строгим списком fact_id
-            strict_prompt = build_script_prompt_strict_refs(req.query, outline.model_dump(), fact_cards)
+            strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
             script2 = self.deps.llm.generate(strict_prompt, system="Ты строго следуешь списку fact_id, не выдумываешь.")
             ref_check2 = check_fact_refs(script2, fact_cards)
             if ref_check2.ok:
