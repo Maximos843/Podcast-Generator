@@ -1,34 +1,13 @@
-# fact_checking.py
+# src/generation/fact_checking.py
 from __future__ import annotations
-from dataclasses import dataclass
+
 from typing import List, Dict, Any, Optional
 import json
-import re
 
+from src.domain.contracts import Fact, FactCard, FactCheckReport
+from src.generation.json_extract import extract_json_object
+from src.domain.contracts import RetrievedArticleHit
 from src.llm.base import LLM
-
-
-@dataclass
-class Fact:
-    fact_id: str
-    statement: str
-    evidence_quote: str
-    article_id: str
-
-
-@dataclass
-class FactCard:
-    article_id: str
-    year: Optional[int]
-    title_guess: Optional[str]
-    facts: List[Fact]
-
-
-def _safe_json_extract(text: str) -> Dict[str, Any]:
-    m = re.search(r"\{.*\}", text, flags=re.S)
-    if not m:
-        raise ValueError(f"LLM output does not contain JSON object. Output head: {text[:200]}")
-    return json.loads(m.group(0))
 
 
 def build_fact_card_prompt(article_id: str, year: Optional[int], text: str, best_chunks: List[str]) -> str:
@@ -75,17 +54,19 @@ def build_fact_card(
 ) -> FactCard:
     prompt = build_fact_card_prompt(article_id, year, full_text, best_chunks_texts)
     out = llm.generate(prompt, system="Ты — строгий факт-экстрактор. Никаких выдумок.")
-    obj = _safe_json_extract(out)
+    obj = extract_json_object(out)
 
     facts: List[Fact] = []
     for i, f in enumerate(obj.get("facts", []), start=1):
         fid = f.get("fact_id") or f"{fact_id_prefix}-F{i}"
-        facts.append(Fact(
-            fact_id=fid,
-            statement=f["statement"].strip(),
-            evidence_quote=f["evidence_quote"].strip(),
-            article_id=article_id,
-        ))
+        facts.append(
+            Fact(
+                fact_id=fid,
+                statement=str(f["statement"]).strip(),
+                evidence_quote=str(f["evidence_quote"]).strip(),
+                article_id=article_id,
+            )
+        )
 
     return FactCard(
         article_id=article_id,
@@ -95,20 +76,27 @@ def build_fact_card(
     )
 
 
+from src.domain.contracts import RetrievedArticleHit
+
 def build_fact_cards_for_retrieved(
     llm: LLM,
     article_store,
-    retrieved_articles: List[Dict[str, Any]],
+    retrieved_articles: list[RetrievedArticleHit],
     max_articles: int = 7,
-) -> List[FactCard]:
-    fact_cards: List[FactCard] = []
-    for idx, hit in enumerate(retrieved_articles[:max_articles], start=1):
-        aid = hit["article_id"]
-        rec = article_store.get(aid)
+) -> list[FactCard]:
+    fact_cards: list[FactCard] = []
+
+    hits = retrieved_articles[:max_articles]
+    ids = [h.article_id for h in hits]
+    records = article_store.get_many(ids)  # <-- батч
+
+    for idx, hit in enumerate(hits, start=1):
+        aid = hit.article_id
+        rec = records.get(aid)
         if rec is None:
             continue
 
-        best_chunks = [c["text"] for c in hit.get("best_chunks", []) if c.get("text")]
+        best_chunks = [c.text for c in hit.best_chunks if c.text]
         card = build_fact_card(
             llm=llm,
             article_id=aid,
@@ -118,7 +106,9 @@ def build_fact_cards_for_retrieved(
             fact_id_prefix=f"A{idx}",
         )
         fact_cards.append(card)
+
     return fact_cards
+
 
 
 def build_fact_check_prompt(script: str, fact_cards: List[FactCard]) -> str:
@@ -157,7 +147,8 @@ def build_fact_check_prompt(script: str, fact_cards: List[FactCard]) -> str:
 """
 
 
-def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard]) -> Dict[str, Any]:
+def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard]) -> FactCheckReport:
     prompt = build_fact_check_prompt(script, fact_cards)
     out = llm.generate(prompt, system="Ты — строгий фактчекер. Минимум фантазии.")
-    return _safe_json_extract(out)
+    obj = extract_json_object(out)
+    return FactCheckReport.model_validate(obj)

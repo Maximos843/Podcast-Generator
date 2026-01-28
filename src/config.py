@@ -5,6 +5,9 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -67,12 +70,12 @@ class AppConfig:
 
             qdrant_collection=os.getenv("QDRANT_COLLECTION", "podcast_chunks"),
 
-            sqlite_db_path=os.getenv("SQLITE_DB_PATH", "articles.sqlite"),
+            sqlite_db_path=os.getenv("SQLITE_DB_PATH", "data/articles.sqlite"),
             json_articles_path=os.getenv("JSON_ARTICLES_PATH"),
 
-            yandex_api_key=os.getenv("YANDEX_API_KEY"),
-            yandex_folder_id=os.getenv("YANDEX_FOLDER_ID"),
-            yandex_model_uri=os.getenv("YANDEX_MODEL_URI"),
+            yandex_api_key=os.getenv("YANDEX_API_KEY", '***'),
+            yandex_folder_id=os.getenv("YANDEX_FOLDER_ID", '***'),
+            yandex_model_uri=os.getenv("YANDEX_MODEL_URI", ''),
 
             embedder_model_name=os.getenv("EMBEDDER_MODEL_NAME", "intfloat/multilingual-e5-base"),
             embedder_device=os.getenv("EMBEDDER_DEVICE", "cpu"),

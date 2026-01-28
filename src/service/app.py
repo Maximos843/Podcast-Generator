@@ -1,68 +1,71 @@
 # src/service/app.py
 from __future__ import annotations
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+import logging
+import time
+
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.config import AppConfig
+from src.domain.contracts import PipelineRequest, PipelineResponse
 from src.pipeline.service import PipelineService
-from src.domain.types import PipelineRequest
-from src.service.schemas import GenerateRequest, GenerateResponse
 from src.service.wiring import build_deps
+from src.service.middleware import RequestIdLoggingMiddleware
+from src.service.metrics import GENERATE_LATENCY, GENERATE_ERRORS
+
+
+def _setup_logging(env: str) -> None:
+    level = logging.DEBUG if env == "dev" else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
 
 
 def create_app() -> FastAPI:
     cfg = AppConfig.from_env()
-    deps = build_deps(cfg)
-    service = PipelineService(deps=deps)
+    _setup_logging(cfg.env)
 
-    app = FastAPI(title="RAG Podcast Service", version="0.1.0")
+    deps = build_deps(cfg)
+    service = PipelineService(deps)
+
+    app = FastAPI(title="RAG Podcast Service", version="0.4.0")
+    app.add_middleware(RequestIdLoggingMiddleware)
 
     @app.get("/health")
     def health():
-        # минимальная проверка доступности Qdrant
+        qdrant_ok = True
         try:
             deps.client.get_collections()
-            qdrant_ok = True
         except Exception:
             qdrant_ok = False
         return {"status": "ok" if qdrant_ok else "degraded", "qdrant": qdrant_ok}
 
-    @app.post("/generate", response_model=GenerateResponse)
-    def generate(body: GenerateRequest):
-        req = PipelineRequest(
-            query=body.query,
-            year=body.year,
-            mode=body.mode,
-            retrieval=body.retrieval,
-            max_articles_for_facts=body.max_articles_for_facts,
-            include_debug=body.include_debug,
-        )
-        resp = service.generate(req)
-        # FastAPI сам сериализует pydantic-модель response_model, но у нас resp — dataclass.
-        # Поэтому отдаём через .__dict__ + ручная сборка pydantic-ответа:
-        out = GenerateResponse(
-            request_id=resp.request_id,
-            hits=[
-                {
-                    "article_id": h.article_id,
-                    "score": h.score,
-                    "year": h.year,
-                    "best_chunks": [
-                        {"chunk_id": c.chunk_id, "text": c.text, "score": c.score, "year": c.year}
-                        for c in h.best_chunks
-                    ],
-                }
-                for h in resp.hits
-            ],
-            fact_cards=resp.fact_cards,
-            outline=resp.outline,
-            script=resp.script,
-            fact_check=resp.fact_check,
-            timings=resp.timings.__dict__,
-            debug=resp.debug,
-        )
-        return JSONResponse(content=out.model_dump())
+    @app.get("/metrics")
+    def metrics():
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.post("/generate", response_model=PipelineResponse)
+    def generate(body: PipelineRequest, request: Request) -> PipelineResponse:
+        rid = getattr(request.state, "request_id", None)
+
+        t0 = time.perf_counter()
+        try:
+            resp = service.generate(body, request_id=rid)
+        except Exception as e:
+            GENERATE_ERRORS.labels(
+                mode=body.mode,
+                retrieval=body.retrieval,
+                type=type(e).__name__,
+            ).inc()
+            raise
+        finally:
+            dt = time.perf_counter() - t0
+            GENERATE_LATENCY.labels(mode=body.mode, retrieval=body.retrieval).observe(dt)
+
+        return resp
 
     return app
 

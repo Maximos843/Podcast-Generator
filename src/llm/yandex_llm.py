@@ -25,7 +25,7 @@ class YandexLLMConfig:
 class YandexGPT5Client:
     def __init__(self, cfg: YandexLLMConfig):
         self.cfg = cfg
-        self.model_uri = cfg.model_uri or f"gpt://{cfg.folder_id}/yandexgpt/latest"
+        self.model_uri = cfg.model_uri or f"gpt://{cfg.folder_id}/yandexgpt-lite"
 
         default_headers = {}
         if cfg.data_logging_enabled is False:

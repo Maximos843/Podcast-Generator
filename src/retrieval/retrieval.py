@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import gc
+import logging
 import uuid
 from collections import defaultdict
 from typing import Optional, Literal, List, Dict, Any
@@ -18,6 +19,10 @@ from src.config import QDrantConfig
 from src.storage.preprocessing import chunk_text_by_sentences
 from src.retrieval.model import BaseEmbedder, BaseReranker
 from src.domain.types import Article, Chunk
+from src.retrieval.payload_schema import FULL_ARTICLE_ID, CHUNK_ID, TEXT, YEAR, REQUIRED_KEYS
+
+
+logger = logging.getLogger("rag-service")
 
 
 # -----------------------
@@ -101,6 +106,15 @@ def search_chunks_hybrid_rrf(
 # -----------------------
 # Aggregation + retrieve_articles
 # -----------------------
+
+def _payload_has_required(payload: dict) -> bool:
+    for k in REQUIRED_KEYS:
+        v = payload.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return False
+    return True
+
+
 def _aggregate_points_to_articles(
     points: List[models.ScoredPoint],
     *,
@@ -110,17 +124,27 @@ def _aggregate_points_to_articles(
 ) -> List[Dict[str, Any]]:
     by_article: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
+    bad_payload_cnt = 0
+
     for p in points:
         payload = p.payload or {}
-        art_id = payload.get("full_article_id")
-        if not art_id:
+        if not _payload_has_required(payload):
+            bad_payload_cnt += 1
             continue
-        by_article[art_id].append({
-            "chunk_id": payload.get("chunk_id"),
-            "text": payload.get("text", ""),
-            "score": float(p.score),
-            "year": payload.get("year"),
-        })
+
+        art_id = payload.get(FULL_ARTICLE_ID)
+        by_article[art_id].append(
+            {
+                "chunk_id": payload.get(CHUNK_ID),
+                "text": payload.get(TEXT, ""),
+                "score": float(p.score),
+                "year": payload.get(YEAR),
+            }
+        )
+
+    if bad_payload_cnt:
+        # не спамим деталями, только число
+        logger.warning("qdrant_payload_invalid", extra={"bad_payload_cnt": bad_payload_cnt})
 
     rows: List[Dict[str, Any]] = []
     for art_id, lst in by_article.items():
@@ -129,15 +153,18 @@ def _aggregate_points_to_articles(
         best_chunks = sorted(lst, key=lambda x: x["score"], reverse=True)[:per_article_top_chunks]
         year = best_chunks[0].get("year") if best_chunks else None
 
-        rows.append({
-            "article_id": art_id,
-            "score": float(art_score),
-            "year": year,
-            "best_chunks": best_chunks,
-        })
+        rows.append(
+            {
+                "article_id": art_id,
+                "score": float(art_score),
+                "year": year,
+                "best_chunks": best_chunks,
+            }
+        )
 
     rows.sort(key=lambda x: x["score"], reverse=True)
     return rows[:top_k_articles]
+
 
 
 def _rerank_chunks(

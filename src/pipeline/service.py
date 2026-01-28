@@ -1,20 +1,17 @@
-# src/pipeline/service.py
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Optional, Dict, Any
-import uuid
+from typing import Any, Optional
 
-from src.domain.types import (
-    PipelineRequest,
-    PipelineResponse,
-    PipelineTimingsMs,
-    coerce_hits,
-)
-from src.retrieval.retrieval import retrieve_articles
+from src.domain.contracts import PipelineRequest, PipelineResponse, PipelineTimingsMs
+from src.retrieval.qdrant_retriever import QdrantRetriever
 from src.generation.fact_checking import build_fact_cards_for_retrieved, fact_check_script
 from src.generation.script_generation import generate_outline, generate_script
+from src.generation.fact_refs import check_fact_refs
+from src.generation.script_generation import build_script_prompt_strict_refs
+from src.pipeline.policy import apply_policy
 
 
 @dataclass(frozen=True)
@@ -28,74 +25,72 @@ class PipelineDeps:
 
 
 class PipelineService:
-    """
-    Сервисная оболочка вокруг твоего текущего пайплайна.
-    Логику не меняем: retrieval -> fact_cards -> outline/script -> fact_check.
-    """
-
     def __init__(self, deps: PipelineDeps):
         self.deps = deps
+        self.retriever = QdrantRetriever(
+            client=deps.client,
+            embedder=deps.embedder,
+            collection_name=deps.collection_name,
+            reranker=deps.reranker,
+        )
 
     def generate(self, req: PipelineRequest, request_id: Optional[str] = None) -> PipelineResponse:
+        req = apply_policy(req)
         rid = request_id or str(uuid.uuid4())
         t0 = perf_counter()
+        timings = PipelineTimingsMs()
 
-        # 1) retrieval
         t = perf_counter()
-        raw_hits = retrieve_articles(
-            client=self.deps.client,
-            embedder=self.deps.embedder,
-            query_text=req.query,
-            collection_name=self.deps.collection_name,
-            mode=req.mode,
-            retrieval=req.retrieval,
-            year=req.year,
-            reranker=self.deps.reranker if req.mode == "quality" else None,
-        )
-        retrieval_ms = int((perf_counter() - t) * 1000)
+        hits = self.retriever.retrieve(req)
+        timings.retrieval_ms = int((perf_counter() - t) * 1000)
 
-        # 2) fact cards
         t = perf_counter()
         fact_cards = build_fact_cards_for_retrieved(
             llm=self.deps.llm,
             article_store=self.deps.article_store,
-            retrieved_articles=raw_hits,  # IMPORTANT: пока оставляем как есть (dict), чтобы не трогать генерацию
+            retrieved_articles=hits,
             max_articles=req.max_articles_for_facts,
         )
-        fact_cards_ms = int((perf_counter() - t) * 1000)
+        timings.fact_cards_ms = int((perf_counter() - t) * 1000)
 
-        # 3) generation
         t = perf_counter()
         outline = generate_outline(self.deps.llm, req.query, fact_cards)
         script = generate_script(self.deps.llm, req.query, outline, fact_cards)
-        generation_ms = int((perf_counter() - t) * 1000)
+        timings.generation_ms = int((perf_counter() - t) * 1000)
+        ref_check = check_fact_refs(script, fact_cards)
+        if not ref_check.ok:
+            # 1 retry: перегенерить сценарий со строгим списком fact_id
+            strict_prompt = build_script_prompt_strict_refs(req.query, outline.model_dump(), fact_cards)
+            script2 = self.deps.llm.generate(strict_prompt, system="Ты строго следуешь списку fact_id, не выдумываешь.")
+            ref_check2 = check_fact_refs(script2, fact_cards)
+            if ref_check2.ok:
+                script = script2
+            else:
+                # мягкая деградация: добавим предупреждение в конец
+                script += "\n\n[system] Предупреждение: обнаружены неизвестные ссылки на факты: " + ", ".join(sorted(ref_check2.unknown))
 
-        # 4) fact check
         t = perf_counter()
-        report = fact_check_script(self.deps.llm, script, fact_cards)
-        fact_check_ms = int((perf_counter() - t) * 1000)
+        report = None
+        if req.mode == "quality":
+            report = fact_check_script(self.deps.llm, script, fact_cards)
+        timings.fact_check_ms = int((perf_counter() - t) * 1000)
 
-        total_ms = int((perf_counter() - t0) * 1000)
+        timings.total_ms = int((perf_counter() - t0) * 1000)
 
-        debug: Optional[Dict[str, Any]] = None
+        debug = None
         if req.include_debug:
             debug = {
-                "raw_hits_preview": raw_hits[:3],
+                "hits_preview": [h.model_dump() for h in hits[:3]],
+                "fact_cards_cnt": len(fact_cards),
             }
 
         return PipelineResponse(
             request_id=rid,
-            hits=coerce_hits(raw_hits),
+            hits=hits,
             fact_cards=fact_cards,
             outline=outline,
             script=script,
             fact_check=report,
-            timings=PipelineTimingsMs(
-                retrieval_ms=retrieval_ms,
-                fact_cards_ms=fact_cards_ms,
-                generation_ms=generation_ms,
-                fact_check_ms=fact_check_ms,
-                total_ms=total_ms,
-            ),
+            timings=timings,
             debug=debug,
         )

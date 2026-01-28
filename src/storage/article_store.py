@@ -33,6 +33,18 @@ class BaseArticleStore:
     def __contains__(self, full_article_id: str) -> bool:
         return self.get(full_article_id) is not None
 
+    def get_many(self, full_article_ids: Iterable[str]) -> Dict[str, ArticleRecord]:
+        """
+        По умолчанию — наивно через get() (подойдет для InMemory).
+        SQLite переопределит на один SQL-запрос.
+        """
+        out: Dict[str, ArticleRecord] = {}
+        for fid in full_article_ids:
+            rec = self.get(fid)
+            if rec is not None:
+                out[fid] = rec
+        return out
+
 
 class InMemoryArticleStore(BaseArticleStore):
     def __init__(self, records: Dict[str, ArticleRecord]):
@@ -232,3 +244,41 @@ class SQLiteArticleStore(BaseArticleStore):
 
         store.bulk_upsert(gen_records())
         return store
+
+    def get_many(self, full_article_ids: Iterable[str]) -> Dict[str, ArticleRecord]:
+        ids = [x for x in full_article_ids if x]
+        if not ids:
+            return {}
+
+        # SQLite ограничивает количество параметров в IN (...).
+        # 500 — безопасно для разных сборок.
+        CHUNK = 500
+        out: Dict[str, ArticleRecord] = {}
+
+        con = self._connect()
+        try:
+            for i in range(0, len(ids), CHUNK):
+                part = ids[i : i + CHUNK]
+                placeholders = ",".join(["?"] * len(part))
+                cur = con.execute(
+                    f"""
+                    SELECT full_article_id, page_path, page_idx, article_id, year, cleaned_text, original_text
+                    FROM articles
+                    WHERE full_article_id IN ({placeholders})
+                    """,
+                    tuple(part),
+                )
+                for row in cur.fetchall():
+                    out[row[0]] = ArticleRecord(
+                        full_article_id=row[0],
+                        page_path=row[1],
+                        page_idx=int(row[2]),
+                        article_id=row[3],
+                        year=int(row[4]) if row[4] is not None else None,
+                        cleaned_text=row[5],
+                        original_text=row[6],
+                    )
+        finally:
+            con.close()
+
+        return out

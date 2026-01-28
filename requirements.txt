@@ -6,3 +6,6 @@ openai==2.15.0
 pandas==2.0.2
 yandex-cloud-ml-sdk==0.17.1
 python-dotenv==1.2.1
+fastapi==0.128.0
+uvicorn==0.40.0
+prometheus_client==0.24.1

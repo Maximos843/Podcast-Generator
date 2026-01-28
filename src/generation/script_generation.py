@@ -1,30 +1,12 @@
-# script_generation.py
+# src/generation/script_generation.py
 from __future__ import annotations
 
 from typing import List, Dict, Any
 import json
-import re
 
-from src.generation.fact_checking import FactCard
+from src.domain.contracts import FactCard, Outline
+from src.generation.json_extract import extract_json_object
 from src.llm.base import LLM
-
-
-
-def _extract_json_object(text: str) -> Dict[str, Any]:
-    """
-    Более устойчиво, чем r"\{.*\}":
-    - сначала ищем fenced ```json
-    - иначе берём от первой '{' до последней '}'
-    """
-    fenced = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.S | re.I)
-    if fenced:
-        return json.loads(fenced.group(1))
-
-    l = text.find("{")
-    r = text.rfind("}")
-    if l == -1 or r == -1 or r <= l:
-        raise ValueError(f"Cannot find JSON object in LLM output. Head: {text[:200]}")
-    return json.loads(text[l:r+1])
 
 
 def build_outline_prompt(query: str, fact_cards: List[FactCard]) -> str:
@@ -81,12 +63,29 @@ OUTLINE (JSON):
 Напиши цельный сценарий подкаста (примерно 4–7 минут текста)."""
 
 
-def generate_outline(llm: LLM, query: str, fact_cards: List[FactCard]) -> Dict[str, Any]:
+def generate_outline(llm: LLM, query: str, fact_cards: List[FactCard]) -> Outline:
     prompt = build_outline_prompt(query, fact_cards)
     out = llm.generate(prompt, system="Ты — редактор, который строит план выпуска.")
-    return _extract_json_object(out)
+    obj = extract_json_object(out)
+    return Outline.model_validate(obj)
 
 
-def generate_script(llm: LLM, query: str, outline_obj: Dict[str, Any], fact_cards: List[FactCard]) -> str:
-    prompt = build_script_prompt(query, outline_obj, fact_cards)
+def generate_script(llm: LLM, query: str, outline: Outline, fact_cards: List[FactCard]) -> str:
+    prompt = build_script_prompt(query, outline.model_dump(), fact_cards)
     return llm.generate(prompt, system="Ты — диктор 1930-х. Но ты строго следуешь фактам.")
+
+
+def build_script_prompt_strict_refs(query: str, outline_obj: dict, fact_cards: list[FactCard]) -> str:
+    # тот же prompt, но добавим жёсткое правило
+    base = build_script_prompt(query, outline_obj, fact_cards)
+    known = []
+    for c in fact_cards:
+        for f in c.facts:
+            known.append(f.fact_id)
+
+    return (
+        base
+        + "\n\nСТРОГОЕ ПРАВИЛО:\n"
+          "Используй ТОЛЬКО эти fact_id в ссылках вида [A#-F#]. Никаких других:\n"
+        + ", ".join(known)
+    )
