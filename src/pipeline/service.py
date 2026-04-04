@@ -10,10 +10,9 @@ from src.retrieval.qdrant_retriever import QdrantRetriever
 from src.generation.fact_checking import (
     build_fact_cards_for_retrieved,
     fact_check_script,
-    repair_script_with_fact_check_report,
 )
 from src.generation.fact_refs import check_fact_refs
-from src.generation.prompts import SYSTEM_STRICT_REFS_GENERATION
+from src.generation.prompts import SYSTEM_STRICT_REFS_GENERATION, SYSTEM_SCRIPT_GENERATION
 from src.generation.script_generation import (
     build_outline_and_script_prompt_strict_refs,
     generate_outline_and_script,
@@ -29,6 +28,37 @@ class PipelineDeps:
     reranker: Any
     article_store: Any
     llm: Any
+
+
+def _repair_with_factcheck(llm, query: str, script: str, report) -> str:
+    if not report or not report.unsupported:
+        return script
+
+    unsupported_dump = [u.model_dump() for u in report.unsupported]
+    prompt = f"""Запрос пользователя:
+{query}
+
+Ниже сценарий:
+{script}
+
+Ниже неподтверждённые утверждения:
+{unsupported_dump}
+
+Задача:
+Перепиши только неподтверждённые места, сохрани стиль и структуру.
+Удаляй или исправляй неподтверждённые утверждения.
+Не добавляй новых исторических фактов.
+
+Верни строго JSON:
+{{
+  "script": "..."
+}}
+"""
+    out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION)
+    from src.generation.json_extract import extract_json_object
+    obj = extract_json_object(out)
+    repaired = str(obj.get("script", "")).strip()
+    return repaired or script
 
 
 class PipelineService:
@@ -65,39 +95,29 @@ class PipelineService:
         t = perf_counter()
         outline, script = generate_outline_and_script(self.deps.llm, req.query, fact_cards)
 
-        # 1. проверка ссылок
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
-            script2 = self.deps.llm.generate(strict_prompt, system=SYSTEM_STRICT_REFS_GENERATION)
-            ref_check2 = check_fact_refs(script2, fact_cards)
-            if ref_check2.ok:
-                script = script2
-            else:
-                script += "\n\n[system] Предупреждение: обнаружены неизвестные ссылки на факты: " + ", ".join(
-                    sorted(ref_check2.unknown)
-                )
+            strict_out = self.deps.llm.generate(strict_prompt, system=SYSTEM_STRICT_REFS_GENERATION)
+            from src.generation.json_extract import extract_json_object
+            strict_obj = extract_json_object(strict_out)
+            strict_script = str(strict_obj.get("script", "")).strip() if isinstance(strict_obj, dict) else ""
+            if strict_script:
+                strict_ref_check = check_fact_refs(strict_script, fact_cards)
+                if strict_ref_check.ok:
+                    script = strict_script
 
         timings.generation_ms = int((perf_counter() - t) * 1000)
 
-        # 2. фактчекинг
         t = perf_counter()
         report = None
         if req.mode == "quality":
             report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
 
-            # 3. если есть unsupported — ремонтируем текст
             if report and report.unsupported:
-                repaired_script = repair_script_with_fact_check_report(
-                    llm=self.deps.llm,
-                    query=req.query,
-                    script=script,
-                    fact_cards=fact_cards,
-                    report=report,
-                )
-
-                # повторная проверка после repair
+                repaired_script = _repair_with_factcheck(self.deps.llm, req.query, script, report)
                 repaired_ref_check = check_fact_refs(repaired_script, fact_cards)
+
                 if repaired_ref_check.ok:
                     script = repaired_script
                     report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
