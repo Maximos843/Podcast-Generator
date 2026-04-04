@@ -1,34 +1,35 @@
-# src/generation/fact_checking.py
 from __future__ import annotations
 
 from typing import List, Dict, Any, Optional, Tuple, Union
 import logging
+import re
 
 from src.types import Fact, FactCard, FactCheckReport, RetrievedArticleHit, PipelineRequest
 from src.generation.json_extract import extract_json_object
 from src.generation.prompts import (
     SYSTEM_FACTCHECK,
     SYSTEM_MAKE_FACTS,
+    SYSTEM_SCRIPT_REPAIR,
     build_fact_cards_batch_user_prompt,
     build_fact_check_user_prompt,
+    build_script_repair_user_prompt,
 )
 from src.llm.base import LLM
 
 logger = logging.getLogger("rag-service")
 
-# --- Настройки батча ---
-FACT_CONTEXT_MAX_CHUNKS = 4
-FACT_CONTEXT_MAX_CHARS_PER_ARTICLE = 2200
-FACT_BATCH_MAX_ARTICLES = 4
+# Было слишком мало — поднимаем умеренно
+FACT_CONTEXT_MAX_CHUNKS = 6
+FACT_CONTEXT_MAX_CHARS_PER_ARTICLE = 4200
+FACT_BATCH_MAX_ARTICLES = 6
+
+ARTICLE_WINDOW_CHARS = 1800
+MAX_WINDOWS_PER_ARTICLE = 2
 
 HitT = Union[Dict[str, Any], RetrievedArticleHit]
 
 
 def _extract_hit_fields(hit: HitT) -> Tuple[str, Optional[int], List[str]]:
-    """
-    Возвращает: (article_id, year, best_chunks_texts)
-    Поддерживает dict и RetrievedArticleHit.
-    """
     if isinstance(hit, RetrievedArticleHit):
         aid = hit.article_id
         year = hit.year
@@ -41,20 +42,120 @@ def _extract_hit_fields(hit: HitT) -> Tuple[str, Optional[int], List[str]]:
     return aid, year, best_chunks
 
 
-def _normalize_context(best_chunks_texts: List[str]) -> str:
-    chunks = [c.strip() for c in best_chunks_texts if c and c.strip()][:FACT_CONTEXT_MAX_CHUNKS]
-    return ("\n\n".join(chunks))[:FACT_CONTEXT_MAX_CHARS_PER_ARTICLE]
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
 
 
-def build_fact_cards_batch_prompt(hits: List[HitT], request: PipelineRequest) -> str:
-    """
-    В prompt чётко разделяем статьи, запрещаем смешивать источники.
-    """
+def _safe_find_subtext(full_text: str, sub_text: str) -> int:
+    full = _normalize_ws(full_text)
+    sub = _normalize_ws(sub_text)
+
+    if not full or not sub:
+        return -1
+
+    idx = full.find(sub)
+    if idx != -1:
+        return idx
+
+    anchor = sub[: min(len(sub), 180)]
+    if len(anchor) >= 40:
+        idx = full.find(anchor)
+        if idx != -1:
+            return idx
+
+    return -1
+
+
+def _cut_window(full_text: str, center_start: int, center_len: int, window_chars: int) -> str:
+    full = _normalize_ws(full_text)
+    if not full:
+        return ""
+
+    half = window_chars // 2
+    center_mid = center_start + center_len // 2
+    left = max(0, center_mid - half)
+    right = min(len(full), center_mid + half)
+
+    while left > 0 and full[left] != " ":
+        left -= 1
+    while right < len(full) and full[right - 1] != " ":
+        right += 1
+        if right >= len(full):
+            right = len(full)
+            break
+
+    return full[left:right].strip()
+
+
+def _dedupe_texts(texts: List[str]) -> List[str]:
+    seen = set()
+    out = []
+
+    for t in texts:
+        norm = _normalize_ws(t)
+        if not norm:
+            continue
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+
+    return out
+
+
+def _build_expanded_context_for_hit(article_store, hit: HitT) -> str:
+    aid, _, best_chunks = _extract_hit_fields(hit)
+    best_chunks = [c for c in best_chunks if c and c.strip()][:FACT_CONTEXT_MAX_CHUNKS]
+
+    fallback_ctx = ("\n\n".join(best_chunks))[:FACT_CONTEXT_MAX_CHARS_PER_ARTICLE]
+    if not aid or article_store is None:
+        return fallback_ctx
+
+    rec = article_store.get(aid)
+    if rec is None or not rec.cleaned_text:
+        return fallback_ctx
+
+    full_text = rec.cleaned_text
+    windows = []
+
+    for chunk in best_chunks:
+        idx = _safe_find_subtext(full_text, chunk)
+        if idx == -1:
+            windows.append(_normalize_ws(chunk))
+            continue
+
+        window = _cut_window(
+            full_text=full_text,
+            center_start=idx,
+            center_len=len(_normalize_ws(chunk)),
+            window_chars=ARTICLE_WINDOW_CHARS,
+        )
+        if window:
+            windows.append(window)
+
+        if len(windows) >= MAX_WINDOWS_PER_ARTICLE:
+            break
+
+    windows = _dedupe_texts(windows)
+    if not windows:
+        return fallback_ctx
+
+    parts = []
+    for i, window in enumerate(windows, start=1):
+        if i - 1 < len(best_chunks):
+            parts.append(f"[ANCHOR_CHUNK_{i}]\n{_normalize_ws(best_chunks[i-1])}")
+        parts.append(f"[ARTICLE_WINDOW_{i}]\n{window}")
+
+    merged = "\n\n".join(parts).strip()
+    return merged[:FACT_CONTEXT_MAX_CHARS_PER_ARTICLE]
+
+
+def build_fact_cards_batch_prompt(hits: List[HitT], request: PipelineRequest, article_store) -> str:
     blocks = []
 
     for i, h in enumerate(hits, start=1):
-        aid, year, best_chunks = _extract_hit_fields(h)
-        ctx = _normalize_context(best_chunks)
+        aid, year, _ = _extract_hit_fields(h)
+        ctx = _build_expanded_context_for_hit(article_store, h)
 
         if not aid or not ctx.strip():
             continue
@@ -79,26 +180,32 @@ def build_fact_cards_for_retrieved(
     max_articles: int = 7,
 ) -> List[FactCard]:
     hits = retrieved_articles[: min(max_articles, FACT_BATCH_MAX_ARTICLES)]
-    prompt = build_fact_cards_batch_prompt(hits, request)
+    prompt = build_fact_cards_batch_prompt(hits, request, article_store)
 
     out = llm.generate(prompt, system=SYSTEM_MAKE_FACTS)
     obj = extract_json_object(out)
     cards_in = obj.get("cards", [])
 
     fact_cards: List[FactCard] = []
-
     for c in cards_in:
         aid = c.get("article_id")
         if not aid:
             continue
 
         facts: List[Fact] = []
+        seen_statements = set()
+
         for f in c.get("facts", []) or []:
             st = str(f.get("statement", "")).strip()
             ev = str(f.get("evidence_quote", "")).strip()
             fid = str(f.get("fact_id", "")).strip()
             if not (st and ev and fid):
                 continue
+
+            st_norm = st.lower()
+            if st_norm in seen_statements:
+                continue
+            seen_statements.add(st_norm)
 
             facts.append(
                 Fact(
@@ -109,14 +216,15 @@ def build_fact_cards_for_retrieved(
                 )
             )
 
-        fact_cards.append(
-            FactCard(
-                article_id=aid,
-                year=c.get("year"),
-                title_guess=c.get("title_guess"),
-                facts=facts,
+        if facts:
+            fact_cards.append(
+                FactCard(
+                    article_id=aid,
+                    year=c.get("year"),
+                    title_guess=c.get("title_guess"),
+                    facts=facts,
+                )
             )
-        )
 
     return fact_cards
 
@@ -133,13 +241,48 @@ def build_fact_check_prompt(script: str, fact_cards: List[FactCard], request: st
                     "evidence_quote": f.evidence_quote,
                 }
             )
-
     return build_fact_check_user_prompt(facts_flat, script, request)
 
 
 def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard], request: str) -> FactCheckReport:
     prompt = build_fact_check_prompt(script, fact_cards, request)
     out = llm.generate(prompt, system=SYSTEM_FACTCHECK)
-    print(out)
     obj = extract_json_object(out)
     return FactCheckReport.model_validate(obj)
+
+
+def repair_script_with_fact_check_report(
+    llm: LLM,
+    query: str,
+    script: str,
+    fact_cards: List[FactCard],
+    report: FactCheckReport,
+) -> str:
+    if not report.unsupported:
+        return script
+
+    facts_flat = []
+    for card in fact_cards:
+        for f in card.facts:
+            facts_flat.append(
+                {
+                    "fact_id": f.fact_id,
+                    "article_id": f.article_id,
+                    "statement": f.statement,
+                    "evidence_quote": f.evidence_quote,
+                }
+            )
+
+    unsupported = [u.model_dump() for u in report.unsupported]
+
+    prompt = build_script_repair_user_prompt(
+        query=query,
+        script=script,
+        fact_cards=facts_flat,
+        unsupported=unsupported,
+    )
+    out = llm.generate(prompt, system=SYSTEM_SCRIPT_REPAIR)
+    obj = extract_json_object(out)
+
+    repaired = str(obj.get("script", "")).strip()
+    return repaired or script

@@ -7,7 +7,11 @@ from typing import Any, Optional
 
 from src.types import PipelineRequest, PipelineResponse, PipelineTimingsMs
 from src.retrieval.qdrant_retriever import QdrantRetriever
-from src.generation.fact_checking import build_fact_cards_for_retrieved, fact_check_script
+from src.generation.fact_checking import (
+    build_fact_cards_for_retrieved,
+    fact_check_script,
+    repair_script_with_fact_check_report,
+)
 from src.generation.fact_refs import check_fact_refs
 from src.generation.prompts import SYSTEM_STRICT_REFS_GENERATION
 from src.generation.script_generation import (
@@ -60,8 +64,8 @@ class PipelineService:
 
         t = perf_counter()
         outline, script = generate_outline_and_script(self.deps.llm, req.query, fact_cards)
-        timings.generation_ms = int((perf_counter() - t) * 1000)
 
+        # 1. проверка ссылок
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
@@ -74,12 +78,31 @@ class PipelineService:
                     sorted(ref_check2.unknown)
                 )
 
+        timings.generation_ms = int((perf_counter() - t) * 1000)
+
+        # 2. фактчекинг
         t = perf_counter()
         report = None
         if req.mode == "quality":
             report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
-        timings.fact_check_ms = int((perf_counter() - t) * 1000)
 
+            # 3. если есть unsupported — ремонтируем текст
+            if report and report.unsupported:
+                repaired_script = repair_script_with_fact_check_report(
+                    llm=self.deps.llm,
+                    query=req.query,
+                    script=script,
+                    fact_cards=fact_cards,
+                    report=report,
+                )
+
+                # повторная проверка после repair
+                repaired_ref_check = check_fact_refs(repaired_script, fact_cards)
+                if repaired_ref_check.ok:
+                    script = repaired_script
+                    report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
+
+        timings.fact_check_ms = int((perf_counter() - t) * 1000)
         timings.total_ms = int((perf_counter() - t0) * 1000)
 
         debug = None
