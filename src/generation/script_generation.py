@@ -22,7 +22,6 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
 
 
 def build_outline_and_script_prompt(query: str, fact_cards: List[FactCard]) -> str:
-    # compact facts for outline
     compact = []
     facts_flat = []
     for c in fact_cards:

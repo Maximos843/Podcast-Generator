@@ -13,12 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 def clean_article_text(text: str, dedupe_adjacent: bool = True) -> str:
-    """
-    Минимальная очистка после OCR:
-    - trim
-    - схлопывание пробелов
-    - опционально удаление подряд повторяющихся строк (частый артефакт OCR)
-    """
     if not text:
         return ""
 
@@ -44,10 +38,6 @@ def chunk_text_by_sentences(
     max_chars: int = 1200,
     overlap_chars: int = 300,
 ) -> List[str]:
-    """
-    Разбивка на чанки по предложениям.
-    Важно: защита от ситуации, когда overlap мешает положить следующее предложение (может зациклить).
-    """
     if not text or not text.strip():
         return []
 
@@ -70,7 +60,6 @@ def chunk_text_by_sentences(
             i += 1
             continue
 
-        # current не пуст и sent не влезает => закрываем чанк + overlap
         if current:
             prev_current = current
             chunks.append(prev_current)
@@ -85,7 +74,6 @@ def chunk_text_by_sentences(
                     break
             current = list(reversed(overlap))
 
-            # критическая защита: overlap не должен блокировать progress
             if current and (current_len(current) + len(sent) + 1 > max_chars):
                 logger.debug(
                     "Overlap blocks next sentence; dropping overlap. sent_len=%s overlap_len=%s",
@@ -94,7 +82,6 @@ def chunk_text_by_sentences(
                 current = []
             continue
 
-        # current пустой => кладём sent отдельным чанком
         chunks.append([sent])
         i += 1
 

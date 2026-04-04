@@ -93,11 +93,10 @@ def build_fact_cards_batch_prompt(hits: List[HitT]) -> str:
 
 def build_fact_cards_for_retrieved(
     llm: LLM,
-    article_store,  # оставляем для совместимости; не используем
+    article_store,
     retrieved_articles: List[HitT],
     max_articles: int = 7,
 ) -> List[FactCard]:
-    # для батча обычно хватает 3-4 статей, но берём min(max_articles, FACT_BATCH_MAX_ARTICLES)
     hits = retrieved_articles[: min(max_articles, FACT_BATCH_MAX_ARTICLES)]
     prompt = build_fact_cards_batch_prompt(hits)
 
@@ -139,7 +138,6 @@ def build_fact_cards_for_retrieved(
     return fact_cards
 
 
-# --- fact check (оставляем как было, только stage полезно) ---
 def build_fact_check_prompt(script: str, fact_cards: List[FactCard]) -> str:
     facts_flat = []
     for card in fact_cards:

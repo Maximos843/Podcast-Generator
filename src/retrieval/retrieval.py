@@ -25,9 +25,7 @@ from src.retrieval.payload_schema import FULL_ARTICLE_ID, CHUNK_ID, TEXT, YEAR, 
 logger = logging.getLogger("rag-service")
 
 
-# -----------------------
-# Chunking
-# -----------------------
+
 def make_chunks(articles: List[Article]) -> List[Chunk]:
     chunks: List[Chunk] = []
     for art in tqdm(articles, total=len(articles), desc="chunking articles"):
@@ -38,9 +36,7 @@ def make_chunks(articles: List[Article]) -> List[Chunk]:
     return chunks
 
 
-# -----------------------
-# Search
-# -----------------------
+
 def _year_filter(year: Optional[int]) -> Optional[Filter]:
     if year is None:
         return None
@@ -54,7 +50,7 @@ def search_chunks_dense(
     collection_name: str,
     top_k_chunks: int,
     year: Optional[int] = None,
-    using: Optional[str] = None,  # если dense named-vector, то using="dense"
+    using: Optional[str] = None,
 ):
     qvec = embedder.embed_query(query_text).tolist()
     res = client.query_points(
@@ -103,9 +99,6 @@ def search_chunks_hybrid_rrf(
     return res.points
 
 
-# -----------------------
-# Aggregation + retrieve_articles
-# -----------------------
 
 def _payload_has_required(payload: dict) -> bool:
     for k in REQUIRED_KEYS:
@@ -143,7 +136,6 @@ def _aggregate_points_to_articles(
         )
 
     if bad_payload_cnt:
-        # не спамим деталями, только число
         logger.warning("qdrant_payload_invalid", extra={"bad_payload_cnt": bad_payload_cnt})
 
     rows: List[Dict[str, Any]] = []
@@ -177,7 +169,6 @@ def _rerank_chunks(
     texts = [(p.payload or {}).get("text", "") for p in points]
     scores = reranker.score(query_text, texts, batch_size=batch_size)
 
-    # перезапишем score на rerank_score (для упрощения дальнейшей агрегации)
     out: List[models.ScoredPoint] = []
     for p, s in zip(points, scores):
         out.append(models.ScoredPoint(
@@ -200,22 +191,15 @@ def retrieve_articles(
     collection_name: str,
     mode: Literal["fast", "quality"] = "quality",
     retrieval: Literal["dense", "hybrid"] = "hybrid",
-    # knobs:
     top_k_articles: Optional[int] = None,
     candidate_pool_chunks: Optional[int] = None,
     prefetch_k: Optional[int] = None,
     per_article_top_chunks: Optional[int] = None,
     year: Optional[int] = None,
     score_agg: Literal["max", "sum"] = "max",
-    # reranker:
     reranker: Optional[BaseReranker] = None,
     rerank_batch_size: int = 16,
 ):
-    """
-    Возвращает: List[{article_id, score, year, best_chunks: [{chunk_id,text,score,year}]}]
-    - fast: без rerank
-    - quality: hybrid/dense retrieval + rerank по чанкам (если reranker задан)
-    """
     if prefetch_k is None:
         prefetch_k = QDrantConfig.PREFETCH_K
     if per_article_top_chunks is None:
@@ -232,9 +216,7 @@ def retrieve_articles(
         if top_k_articles is None:
             top_k_articles = QDrantConfig.TOP_K_ARTICLES_QUALITY
 
-    # 1) candidate chunks
     if retrieval == "dense":
-        # если коллекция гибридная (named dense), можно подать using="dense"
         points = search_chunks_dense(
             client, embedder, query_text, collection_name,
             top_k_chunks=candidate_pool_chunks,
@@ -249,11 +231,9 @@ def retrieve_articles(
             year=year,
         )
 
-    # 2) rerank chunks (optional)
     if mode == "quality" and reranker is not None and points:
         points = _rerank_chunks(reranker, query_text, points, batch_size=rerank_batch_size)
 
-    # 3) aggregate to articles
     return _aggregate_points_to_articles(
         points,
         top_k_articles=top_k_articles,

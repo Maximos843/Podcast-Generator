@@ -55,21 +55,17 @@ class PipelineService:
         timings.fact_cards_ms = int((perf_counter() - t) * 1000)
 
         t = perf_counter()
-        #outline = generate_outline(self.deps.llm, req.query, fact_cards)
-        #script = generate_script(self.deps.llm, req.query, outline, fact_cards)
         outline, script = generate_outline_and_script(self.deps.llm, req.query, fact_cards)
 
         timings.generation_ms = int((perf_counter() - t) * 1000)
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
-            # 1 retry: перегенерить сценарий со строгим списком fact_id
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
             script2 = self.deps.llm.generate(strict_prompt, system="Ты строго следуешь списку fact_id, не выдумываешь.")
             ref_check2 = check_fact_refs(script2, fact_cards)
             if ref_check2.ok:
                 script = script2
             else:
-                # мягкая деградация: добавим предупреждение в конец
                 script += "\n\n[system] Предупреждение: обнаружены неизвестные ссылки на факты: " + ", ".join(sorted(ref_check2.unknown))
 
         t = perf_counter()
