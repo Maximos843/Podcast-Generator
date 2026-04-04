@@ -17,8 +17,8 @@ class YandexLLMConfig:
     folder_id: str
     model_uri: Optional[str] = None
     base_url: str = "https://llm.api.cloud.yandex.net/v1"
-    temperature: float = 0.4
-    max_tokens: int = 2000
+    temperature: float = 0.1
+    max_tokens: int = 4096
     data_logging_enabled: bool = False
     request_timeout_sec: float = 120.0
     max_retries: int = 3
@@ -28,7 +28,7 @@ class YandexLLMConfig:
 class YandexGPT5Client:
     def __init__(self, cfg: YandexLLMConfig):
         self.cfg = cfg
-        self.model_uri = cfg.model_uri or f"gpt://{cfg.folder_id}/yandexgpt-lite"
+        self.model_uri = cfg.model_uri or f"gpt://{cfg.folder_id}/yandexgpt-5-lite"
 
         default_headers = {}
         if cfg.data_logging_enabled is False:

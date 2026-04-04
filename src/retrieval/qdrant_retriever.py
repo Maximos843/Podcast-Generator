@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List
 
-from src.domain.contracts import PipelineRequest, RetrievedArticleHit, RetrievedChunkHit
+from src.types import PipelineRequest, RetrievedArticleHit, RetrievedChunkHit
 from src.retrieval.retrieval import retrieve_articles  # твоя текущая функция
 
 

@@ -1,7 +1,7 @@
 # src/pipeline/policy.py
 from __future__ import annotations
 
-from src.domain.contracts import PipelineRequest
+from src.types import PipelineRequest
 
 
 def apply_policy(req: PipelineRequest) -> PipelineRequest:

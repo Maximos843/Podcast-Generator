@@ -7,7 +7,7 @@ import re
 from typing import Optional, List
 
 from src.config import YEAR_RE
-from src.domain.types import Article
+from src.types import Article
 
 logger = logging.getLogger(__name__)
 

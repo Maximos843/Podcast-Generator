@@ -11,7 +11,7 @@ from qdrant_client.models import (
 )
 from src.retrieval.model import BaseEmbedder
 from src.config import QDrantConfig
-from src.domain.types import Chunk
+from src.types import Chunk
 
 
 def index_chunks_in_qdrant(

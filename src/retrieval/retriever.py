@@ -4,7 +4,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
-from src.domain.contracts import RetrievedArticleHit, PipelineRequest
+from src.types import RetrievedArticleHit, PipelineRequest
 
 
 class Retriever(ABC):

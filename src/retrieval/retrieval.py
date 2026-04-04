@@ -18,7 +18,7 @@ from qdrant_client.models import (
 from src.config import QDrantConfig
 from src.storage.preprocessing import chunk_text_by_sentences
 from src.retrieval.model import BaseEmbedder, BaseReranker
-from src.domain.types import Article, Chunk
+from src.types import Article, Chunk
 from src.retrieval.payload_schema import FULL_ARTICLE_ID, CHUNK_ID, TEXT, YEAR, REQUIRED_KEYS
 
 

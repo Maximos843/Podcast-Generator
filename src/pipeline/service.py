@@ -5,14 +5,16 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Optional
 
-from src.domain.contracts import PipelineRequest, PipelineResponse, PipelineTimingsMs
+from src.types import PipelineRequest, PipelineResponse, PipelineTimingsMs
 from src.retrieval.qdrant_retriever import QdrantRetriever
 from src.generation.fact_checking import build_fact_cards_for_retrieved, fact_check_script
 from src.generation.fact_refs import check_fact_refs
-from src.generation.script_generation import build_outline_and_script_prompt_strict_refs
+from src.generation.prompts import SYSTEM_STRICT_REFS_GENERATION
+from src.generation.script_generation import (
+    build_outline_and_script_prompt_strict_refs,
+    generate_outline_and_script,
+)
 from src.pipeline.policy import apply_policy
-from src.generation.script_generation import generate_outline_and_script
-
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class PipelineService:
     def generate(self, req: PipelineRequest, request_id: Optional[str] = None) -> PipelineResponse:
         req = apply_policy(req)
         rid = request_id or str(uuid.uuid4())
+
         t0 = perf_counter()
         timings = PipelineTimingsMs()
 
@@ -51,27 +54,30 @@ class PipelineService:
             article_store=self.deps.article_store,
             retrieved_articles=hits,
             max_articles=req.max_articles_for_facts,
+            request=req,
         )
         timings.fact_cards_ms = int((perf_counter() - t) * 1000)
 
         t = perf_counter()
         outline, script = generate_outline_and_script(self.deps.llm, req.query, fact_cards)
-
         timings.generation_ms = int((perf_counter() - t) * 1000)
+
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
-            script2 = self.deps.llm.generate(strict_prompt, system="Ты строго следуешь списку fact_id, не выдумываешь.")
+            script2 = self.deps.llm.generate(strict_prompt, system=SYSTEM_STRICT_REFS_GENERATION)
             ref_check2 = check_fact_refs(script2, fact_cards)
             if ref_check2.ok:
                 script = script2
             else:
-                script += "\n\n[system] Предупреждение: обнаружены неизвестные ссылки на факты: " + ", ".join(sorted(ref_check2.unknown))
+                script += "\n\n[system] Предупреждение: обнаружены неизвестные ссылки на факты: " + ", ".join(
+                    sorted(ref_check2.unknown)
+                )
 
         t = perf_counter()
         report = None
         if req.mode == "quality":
-            report = fact_check_script(self.deps.llm, script, fact_cards)
+            report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
         timings.fact_check_ms = int((perf_counter() - t) * 1000)
 
         timings.total_ms = int((perf_counter() - t0) * 1000)

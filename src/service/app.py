@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.config import AppConfig
-from src.domain.contracts import PipelineRequest, PipelineResponse
+from src.types import PipelineRequest, PipelineResponse
 from src.pipeline.service import PipelineService
 from src.service.wiring import build_deps
 from src.service.middleware import RequestIdLoggingMiddleware

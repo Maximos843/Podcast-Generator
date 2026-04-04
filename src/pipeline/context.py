@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional, List, Dict
 
-from src.domain.contracts import PipelineRequest, RetrievedArticleHit, FactCard, Outline, FactCheckReport
+from src.types import PipelineRequest, RetrievedArticleHit, FactCard, Outline, FactCheckReport
 
 
 @dataclass

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Set, List
 
-from src.domain.contracts import FactCard
+from src.types import FactCard
 
 
 _FACT_REF_RE = re.compile(r"\[(A\d+-F\d+)\]")

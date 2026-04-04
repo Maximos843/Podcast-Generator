@@ -1,17 +1,14 @@
-# src/domain/contracts.py
 from __future__ import annotations
-
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
+from dataclasses import dataclass
 
 
 class PipelineRequest(BaseModel):
     query: str
     year: Optional[int] = None
-
     mode: Literal["fast", "quality"] = "quality"
     retrieval: Literal["dense", "hybrid"] = "hybrid"
-
     max_articles_for_facts: int = 7
     include_debug: bool = False
 
@@ -24,7 +21,7 @@ class RetrievedChunkHit(BaseModel):
 
 
 class RetrievedArticleHit(BaseModel):
-    article_id: str  # full_article_id
+    article_id: str
     score: float
     year: Optional[int] = None
     best_chunks: List[RetrievedChunkHit] = Field(default_factory=list)
@@ -48,10 +45,11 @@ class OutlineBlock(BaseModel):
     title: str
     goal: str
     facts_used: List[str] = Field(default_factory=list)
+    transition: Optional[str] = None
 
 
 class Outline(BaseModel):
-    outline: List[OutlineBlock]
+    outline: List[OutlineBlock] = Field(default_factory=list)
 
 
 class UnsupportedClaim(BaseModel):
@@ -81,3 +79,20 @@ class PipelineResponse(BaseModel):
     fact_check: Optional[FactCheckReport] = None
     timings: PipelineTimingsMs = Field(default_factory=PipelineTimingsMs)
     debug: Optional[dict] = None
+
+
+@dataclass(frozen=True)
+class Article:
+    page_path: str
+    page_idx: int
+    article_id: str
+    year: Optional[int]
+    original_text: str
+    cleaned_text: str
+
+
+@dataclass(frozen=True)
+class Chunk:
+    article: Article
+    chunk_id: int
+    text: str
