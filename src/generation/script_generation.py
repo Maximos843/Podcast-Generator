@@ -41,12 +41,12 @@ def build_outline_and_script_prompt(query: str, fact_cards: List[FactCard]) -> s
 def _script_needs_retry(script: str) -> bool:
     words = len(script.split())
     refs = len(FACT_REF_RE.findall(script))
-    return words < 650 or refs < 10
+    return words < 1500 or refs < 10
 
 
 def generate_outline_and_script(llm: LLM, query: str, fact_cards: List[FactCard]) -> Tuple[Dict[str, Any], str]:
     prompt = build_outline_and_script_prompt(query, fact_cards)
-    out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION)
+    out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION, task="script")
     obj = extract_json_object(out)
 
     outline = obj.get("outline") or []
@@ -56,7 +56,7 @@ def generate_outline_and_script(llm: LLM, query: str, fact_cards: List[FactCard]
 
     if _script_needs_retry(script):
         retry_prompt = prompt + "\n\nДополнительное требование: сценарий получился слишком кратким. Сделай его более насыщенным фактами и развернутым, но без выдумки."
-        retry_out = llm.generate(retry_prompt, system=SYSTEM_SCRIPT_GENERATION)
+        retry_out = out = llm.generate(retry_prompt, system=SYSTEM_SCRIPT_GENERATION, task="script")
         retry_obj = extract_json_object(retry_out)
 
         retry_outline = retry_obj.get("outline") or outline

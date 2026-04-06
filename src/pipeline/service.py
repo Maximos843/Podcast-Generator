@@ -54,7 +54,7 @@ def _repair_with_factcheck(llm, query: str, script: str, report) -> str:
   "script": "..."
 }}
 """
-    out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION)
+    out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION, task="repair")
     from src.generation.json_extract import extract_json_object
     obj = extract_json_object(out)
     repaired = str(obj.get("script", "")).strip()
@@ -98,7 +98,11 @@ class PipelineService:
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
-            strict_out = self.deps.llm.generate(strict_prompt, system=SYSTEM_STRICT_REFS_GENERATION)
+            strict_out = strict_out = self.deps.llm.generate(
+                strict_prompt,
+                system=SYSTEM_STRICT_REFS_GENERATION,
+                task="strict_refs",
+            )
             from src.generation.json_extract import extract_json_object
             strict_obj = extract_json_object(strict_out)
             strict_script = str(strict_obj.get("script", "")).strip() if isinstance(strict_obj, dict) else ""

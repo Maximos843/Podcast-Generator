@@ -50,6 +50,17 @@ class AppConfig:
     yandex_folder_id: Optional[str] = None
     yandex_model_uri: Optional[str] = None
 
+
+
+    yandex_url: str = "https://llm.api.cloud.yandex.net/v1"
+    llm_default_temperature: float = 0.1
+
+    facts_temperature: float = 0.1
+    factcheck_temperature: float = 0.0
+    strict_refs_temperature: float = 0.0
+    script_temperature: float = 0.5
+    repair_temperature: float = 0.2
+
     # --- embedder ---
     embedder_model_name: str = "intfloat/multilingual-e5-base"
     embedder_device: str = "cpu"

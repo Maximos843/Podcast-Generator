@@ -1,12 +1,11 @@
-# yandex_llm.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
 import time
+import logging
 
 from openai import OpenAI
-import logging
 
 logger = logging.getLogger("rag-llm")
 
@@ -42,40 +41,49 @@ class YandexGPT5Client:
             timeout=cfg.request_timeout_sec,
         )
 
-    def generate(self, prompt: str, system: str = "Ты — полезный ассистент.") -> str:
+    def generate(
+        self,
+        prompt: str,
+        system: str = "Ты — полезный ассистент.",
+        *,
+        task: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
         last_err = None
+        used_temperature = self.cfg.temperature if temperature is None else temperature
+
         for attempt in range(1, self.cfg.max_retries + 1):
             try:
                 resp = self.client.chat.completions.create(
                     model=self.model_uri,
-                    temperature=self.cfg.temperature,
+                    temperature=used_temperature,
                     max_tokens=self.cfg.max_tokens,
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": prompt},
                     ],
                 )
-                content = resp.choices[0].message.content
 
+                content = resp.choices[0].message.content
                 usage = getattr(resp, "usage", None)
+
                 if usage is not None:
-                    # openai SDK обычно даёт usage.prompt_tokens / completion_tokens / total_tokens
                     logger.info(
                         "llm_usage",
                         extra={
                             "model": self.model_uri,
+                            "task": task or "unknown",
                             "prompt_tokens": getattr(usage, "prompt_tokens", None),
                             "completion_tokens": getattr(usage, "completion_tokens", None),
                             "total_tokens": getattr(usage, "total_tokens", None),
                             "max_tokens": self.cfg.max_tokens,
-                            # стадия берётся из system (мы добавили STAGE:...):
-                            "stage": system.splitlines()[0].replace("STAGE:", "").strip() if system.startswith("STAGE:") else "unknown",
+                            "temperature": used_temperature,
                             "prompt_chars": len(prompt),
                             "system_chars": len(system or ""),
                         },
                     )
-
                 return content
+
             except Exception as e:
                 last_err = e
                 if attempt < self.cfg.max_retries:

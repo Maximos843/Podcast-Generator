@@ -189,7 +189,7 @@ def build_fact_cards_batch_prompt_fallback(hits: List[HitT], request: PipelineRe
             }
         )
 
-    return build_fact_cards_batch_user_prompt_fallback(blocks, request.query)
+    return build_fact_cards_batch_user_prompt(blocks, request.query)
 
 
 def _parse_fact_cards(obj: dict) -> List[FactCard]:
@@ -248,7 +248,7 @@ def build_fact_cards_for_retrieved(
     hits = retrieved_articles[: min(max_articles, FACT_BATCH_MAX_ARTICLES)]
 
     prompt = build_fact_cards_batch_prompt(hits, request, article_store)
-    out = llm.generate(prompt, system=SYSTEM_MAKE_FACTS)
+    out = llm.generate(prompt, system=SYSTEM_MAKE_FACTS, task="facts")
     obj = extract_json_object(out)
     fact_cards = _parse_fact_cards(obj)
 
@@ -258,7 +258,7 @@ def build_fact_cards_for_retrieved(
 
     # fallback: пытаемся дожать больше фактов
     fallback_prompt = build_fact_cards_batch_prompt(hits, request, article_store)
-    fallback_out = llm.generate(fallback_prompt + '\n\nВ прошлый раз было слишком мало фактов, нужно больше релеватных фактов для статей.', system=SYSTEM_MAKE_FACTS)
+    fallback_out = llm.generate(fallback_prompt + '\n\nВ прошлый раз было слишком мало фактов, нужно больше релеватных фактов для статей.', system=SYSTEM_MAKE_FACTS, task="facts")
     fallback_obj = extract_json_object(fallback_out)
     fallback_cards = _parse_fact_cards(fallback_obj)
 
@@ -287,6 +287,6 @@ def build_fact_check_prompt(script: str, fact_cards: List[FactCard], request: st
 
 def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard], request: str) -> FactCheckReport:
     prompt = build_fact_check_prompt(script, fact_cards, request)
-    out = llm.generate(prompt, system=SYSTEM_FACTCHECK)
+    out = llm.generate(prompt, system=SYSTEM_FACTCHECK, task="factcheck")
     obj = extract_json_object(out)
     return FactCheckReport.model_validate(obj)
