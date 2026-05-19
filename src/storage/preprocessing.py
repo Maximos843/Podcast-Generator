@@ -1,10 +1,6 @@
-# preprocessing.py
-from __future__ import annotations
-
 import json
 import logging
 import re
-from typing import Optional, List
 
 from src.config import YEAR_RE
 from src.types import Article
@@ -37,15 +33,15 @@ def chunk_text_by_sentences(
     text: str,
     max_chars: int = 1200,
     overlap_chars: int = 300,
-) -> List[str]:
+) -> list[str]:
     if not text or not text.strip():
         return []
 
     sentences = re.split(r"(?<=[\.\?!»])\s+", text)
-    chunks: List[List[str]] = []
-    current: List[str] = []
+    chunks: list[list[str]] = []
+    current: list[str] = []
 
-    def current_len(parts: List[str]) -> int:
+    def current_len(parts: list[str]) -> int:
         return sum(len(s) + 1 for s in parts)
 
     i = 0
@@ -64,7 +60,7 @@ def chunk_text_by_sentences(
             prev_current = current
             chunks.append(prev_current)
 
-            overlap: List[str] = []
+            overlap: list[str] = []
             total = 0
             for s in reversed(prev_current):
                 if total + len(s) + 1 <= overlap_chars:
@@ -91,16 +87,16 @@ def chunk_text_by_sentences(
     return [" ".join(ch).strip() for ch in chunks if ch and " ".join(ch).strip()]
 
 
-def extract_year_from_path(path: str) -> Optional[int]:
+def extract_year_from_path(path: str) -> int | None:
     m = YEAR_RE.search(path)
     return int(m.group(1)) if m else None
 
 
-def load_articles_from_json(json_path: str) -> List[Article]:
+def load_articles_from_json(json_path: str) -> list[Article]:
     with open(json_path, "r", encoding="utf-8") as f:
         pages = json.load(f)
 
-    articles: List[Article] = []
+    articles: list[Article] = []
     page_paths = list(pages.keys())
 
     for page_idx, page_path in enumerate(page_paths):

@@ -1,12 +1,10 @@
-# src/service/app.py
-from __future__ import annotations
-
 import logging
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from gradio import mount_gradio_app
 
 from src.config import AppConfig
 from src.types import PipelineRequest, PipelineResponse
@@ -14,6 +12,7 @@ from src.pipeline.service import PipelineService
 from src.service.wiring import build_deps
 from src.service.middleware import RequestIdLoggingMiddleware
 from src.service.metrics import GENERATE_LATENCY, GENERATE_ERRORS
+from src.service.ui import create_ui
 
 
 def _setup_logging(env: str) -> None:
@@ -66,6 +65,10 @@ def create_app() -> FastAPI:
             GENERATE_LATENCY.labels(mode=body.mode, retrieval=body.retrieval).observe(dt)
 
         return resp
+
+    pipeline = PipelineService(build_deps(cfg))
+    demo = create_ui(cfg, pipeline)
+    mount_gradio_app(app, demo, path="/ui")
 
     return app
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Optional
+from typing import Any
 
 from src.types import PipelineRequest, PipelineResponse, PipelineTimingsMs
 from src.retrieval.qdrant_retriever import QdrantRetriever
@@ -71,7 +71,7 @@ class PipelineService:
             reranker=deps.reranker,
         )
 
-    def generate(self, req: PipelineRequest, request_id: Optional[str] = None) -> PipelineResponse:
+    def generate(self, req: PipelineRequest, request_id: str | None = None) -> PipelineResponse:
         req = apply_policy(req)
         rid = request_id or str(uuid.uuid4())
 
@@ -86,7 +86,7 @@ class PipelineService:
         fact_cards = build_fact_cards_for_retrieved(
             llm=self.deps.llm,
             article_store=self.deps.article_store,
-            retrieved_articles=hits,
+            retrieved_articles=hits,  # type: ignore
             max_articles=req.max_articles_for_facts,
             request=req,
         )
@@ -140,7 +140,7 @@ class PipelineService:
             request_id=rid,
             hits=hits,
             fact_cards=fact_cards,
-            outline=outline,
+            outline=outline,  # type: ignore
             script=script,
             fact_check=report,
             timings=timings,

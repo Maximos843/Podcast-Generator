@@ -1,10 +1,7 @@
-# src/indexing/index_pipeline.py
-from __future__ import annotations
-
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Literal
 
 from qdrant_client import QdrantClient
 
@@ -52,12 +49,10 @@ def run_indexing(
     embedder: BaseEmbedder,
     cfg: IndexRunConfig,
 ) -> dict:
-    # 1) load + clean
     with StageTimer("load_articles"):
         articles = load_articles_from_json(cfg.json_path)
         logger.info("articles_loaded", extra={"count": len(articles)})
 
-    # 2) upsert full texts into SQLite store
     with StageTimer("upsert_sqlite"):
         store = SQLiteArticleStore(cfg.sqlite_db_path)
         records = []
@@ -77,12 +72,10 @@ def run_indexing(
         store.bulk_upsert(records)
         logger.info("sqlite_upsert_done", extra={"db": cfg.sqlite_db_path})
 
-    # 3) chunk
     with StageTimer("chunking"):
         chunks = make_chunks(articles)
         logger.info("chunks_created", extra={"count": len(chunks)})
 
-    # 4) recreate collection (optional)
     if cfg.recreate:
         with StageTimer("recreate_collection"):
             if cfg.mode == "dense":
@@ -91,7 +84,6 @@ def run_indexing(
                 recreate_collection_hybrid(client, cfg.collection_name, embedder)
             logger.info("collection_ready", extra={"collection": cfg.collection_name, "mode": cfg.mode})
 
-    # 5) index
     with StageTimer("qdrant_index"):
         index_chunks_in_qdrant(
             client=client,

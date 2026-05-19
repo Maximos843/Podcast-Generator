@@ -1,8 +1,6 @@
-# model.py
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Protocol, List, Optional
+from typing import Protocol
+from abc import abstractmethod
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -11,13 +9,23 @@ from sentence_transformers import SentenceTransformer
 class BaseEmbedder(Protocol):
     device: str
 
-    def get_dim(self) -> int: ...
-    def embed_passages(self, texts: List[str]) -> np.ndarray: ...
-    def embed_query(self, text: str) -> np.ndarray: ...
+    @abstractmethod
+    def get_dim(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def embed_passages(self, texts: list[str]) -> np.ndarray:
+        raise NotImplementedError
+
+    @abstractmethod
+    def embed_query(self, text: str) -> np.ndarray:
+        raise NotImplementedError
 
 
 class BaseReranker(Protocol):
-    def score(self, query: str, passages: List[str], batch_size: int = 16) -> List[float]: ...
+    @abstractmethod
+    def score(self, query: str, passages: list[str], batch_size: int = 16) -> list[float]:
+        raise NotImplementedError
 
 
 @dataclass
@@ -33,10 +41,10 @@ class SentenceTransformerEmbedder:
         self.model = SentenceTransformer(self.model_name, device=self.device)
         self._dim = self.model.get_sentence_embedding_dimension()
 
-    def get_dim(self) -> int:
+    def get_dim(self) -> int | None:
         return self._dim
 
-    def embed_passages(self, texts: List[str]) -> np.ndarray:
+    def embed_passages(self, texts: list[str]) -> np.ndarray:
         inputs = [f"{self.passage_prefix}{t}" for t in texts]
         emb = self.model.encode(
             inputs,
@@ -70,7 +78,7 @@ class BGEReranker:
         use_fp16: bool = True,
     ):
         try:
-            from FlagEmbedding import FlagReranker
+            from FlagEmbedding import FlagReranker  # type: ignore
         except Exception as e:
             raise ImportError(
                 "Нужен пакет FlagEmbedding: pip install FlagEmbedding\n"
@@ -80,7 +88,7 @@ class BGEReranker:
         self.device = device
         self.model = FlagReranker(model_name, use_fp16=use_fp16, device=device)
 
-    def score(self, query: str, passages: List[str], batch_size: int = 16) -> List[float]:
+    def score(self, query: str, passages: list[str], batch_size: int = 16) -> list[float]:
         pairs = [[query, p] for p in passages]
         scores = self.model.compute_score(pairs, batch_size=batch_size)
         return [float(s) for s in scores]

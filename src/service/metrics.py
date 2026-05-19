@@ -1,7 +1,5 @@
-# src/service/metrics.py
-from __future__ import annotations
-
 from prometheus_client import Counter, Histogram
+
 
 HTTP_LATENCY = Histogram(
     "rag_http_latency_seconds",

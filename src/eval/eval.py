@@ -1,9 +1,6 @@
-# eval.py
-from __future__ import annotations
-
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any, Iterable, Optional, Tuple
+from typing import Iterable, Literal
 from collections import defaultdict
 
 from qdrant_client import QdrantClient
@@ -17,7 +14,7 @@ class EvalQuery:
     query_text: str
     relevant_articles: set[str]
     source: str
-    relevance_grades: Optional[dict[str, int]] = None
+    relevance_grades: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -28,11 +25,11 @@ class EvalMetrics:
     precision_at_k: float
 
 
-def load_eval_queries_from_file(path: str) -> List[EvalQuery]:
+def load_eval_queries_from_file(path: str) -> list[EvalQuery]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    out: List[EvalQuery] = []
+    out: list[EvalQuery] = []
     for row in data:
         out.append(EvalQuery(
             query_text=row["query"],
@@ -44,10 +41,10 @@ def load_eval_queries_from_file(path: str) -> List[EvalQuery]:
 
 
 def _compute_metrics_article_level(
-    ranked_articles: List[str],
+    ranked_articles: list[str],
     relevant_articles: set[str],
     k: int,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     topk = ranked_articles[:k]
     if not relevant_articles:
         return 0.0, 0.0, 0.0, 0.0
@@ -72,9 +69,9 @@ def evaluate_retriever_on_queries(
     embedder: BaseEmbedder,
     collection_name: str,
     *,
-    retrieval: str = "hybrid",             # "dense" | "hybrid"
-    mode: str = "fast",                    # "fast" | "quality"
-    reranker: Optional[BaseReranker] = None,
+    retrieval: Literal["dense", "hybrid"] = "hybrid",             # "dense" | "hybrid"
+    mode: Literal["fast", "quality"] = "fast",                    # "fast" | "quality"
+    reranker: BaseReranker | None = None,
     top_k_articles: int = 10,
     candidate_pool_chunks: int = 80,
     prefetch_k: int = 150,
@@ -93,7 +90,7 @@ def evaluate_retriever_on_queries(
             embedder=embedder,
             query_text=q.query_text,
             collection_name=collection_name,
-            mode=mode,
+            mode=mode, 
             retrieval=retrieval,
             top_k_articles=top_k_articles,
             candidate_pool_chunks=candidate_pool_chunks,
@@ -122,13 +119,13 @@ def evaluate_retriever_on_queries(
 
 def evaluate_by_source(
     client: QdrantClient,
-    eval_queries: List[EvalQuery],
+    eval_queries: list[EvalQuery],
     embedder: BaseEmbedder,
     collection_name: str,
     *,
-    retrieval: str = "hybrid",
-    mode: str = "fast",
-    reranker: Optional[BaseReranker] = None,
+    retrieval: Literal["dense", "hybrid"] = "hybrid",             # "dense" | "hybrid"
+    mode: Literal["fast", "quality"] = "fast",                    # "fast" | "quality"
+    reranker: BaseReranker | None = None,
     top_k_articles: int = 10,
     candidate_pool_chunks: int = 80,
     prefetch_k: int = 150,
@@ -145,7 +142,7 @@ def evaluate_by_source(
         per_article_top_chunks=per_article_top_chunks,
     )
 
-    grouped: Dict[str, List[EvalQuery]] = defaultdict(list)
+    grouped: dict[str, list[EvalQuery]] = defaultdict(list)
     for q in eval_queries:
         grouped[q.source].append(q)
 

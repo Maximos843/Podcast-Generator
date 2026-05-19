@@ -1,8 +1,5 @@
-# src/pipeline/context.py
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Optional, List, Dict
+from typing import Any
 
 from src.types import PipelineRequest, RetrievedArticleHit, FactCard, Outline, FactCheckReport
 
@@ -12,12 +9,12 @@ class PipelineContext:
     request_id: str
     request: PipelineRequest
 
-    raw_hits: List[Dict[str, Any]] = field(default_factory=list)  # как возвращает retrieve_articles()
-    hits: List[RetrievedArticleHit] = field(default_factory=list)
+    raw_hits: list[dict[str, Any]] = field(default_factory=list)
+    hits: list[RetrievedArticleHit] = field(default_factory=list)
 
-    fact_cards: List[FactCard] = field(default_factory=list)
-    outline: Optional[Outline] = None
+    fact_cards: list[FactCard] = field(default_factory=list)
+    outline: Outline | None = None
     script: str = ""
-    fact_check: Optional[FactCheckReport] = None
+    fact_check: FactCheckReport | None = None
 
-    debug: Dict[str, Any] = field(default_factory=dict)
+    debug: dict[str, Any] = field(default_factory=dict)

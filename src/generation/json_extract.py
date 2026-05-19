@@ -1,12 +1,9 @@
-# src/generation/json_extract.py
-from __future__ import annotations
-
 import json
 import re
-from typing import Any, Dict
+from typing import Any
 
 
-def extract_json_object(text: str) -> Dict[str, Any]:
+def extract_json_object(text: str) -> dict[str, Any]:
     """
     Устойчивое извлечение JSON:
     1) fenced ```json {...}```

@@ -1,15 +1,14 @@
-from __future__ import annotations
-
-from typing import Optional
+from abc import ABC, abstractmethod
 
 
-class LLM:
+class LLM(ABC):
+    @abstractmethod
     def generate(
         self,
         prompt: str,
         system: str = "Ты — полезный ассистент.",
         *,
-        task: Optional[str] = None,
-        temperature: Optional[float] = None,
+        task: str | None = None,
+        temperature: float | None = None,
     ) -> str:
         raise NotImplementedError

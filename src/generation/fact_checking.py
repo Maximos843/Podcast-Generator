@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import Any
 import logging
 import re
 
@@ -16,7 +14,6 @@ from src.llm.base import LLM
 
 logger = logging.getLogger("rag-service")
 
-# Поднимаем лимиты умеренно, а не бесконечно
 FACT_CONTEXT_MAX_CHUNKS = 6
 FACT_CONTEXT_MAX_CHARS_PER_ARTICLE = 4200
 FACT_BATCH_MAX_ARTICLES = 6
@@ -25,10 +22,10 @@ ARTICLE_WINDOW_CHARS = 1800
 MAX_WINDOWS_PER_ARTICLE = 2
 MIN_TOTAL_FACTS = 18
 
-HitT = Union[Dict[str, Any], RetrievedArticleHit]
+HitT = dict[str, Any] | RetrievedArticleHit
 
 
-def _extract_hit_fields(hit: HitT) -> Tuple[str, Optional[int], List[str]]:
+def _extract_hit_fields(hit: HitT) -> tuple[str, int | None, list[str]]:
     if isinstance(hit, RetrievedArticleHit):
         aid = hit.article_id
         year = hit.year
@@ -38,7 +35,7 @@ def _extract_hit_fields(hit: HitT) -> Tuple[str, Optional[int], List[str]]:
     aid = hit.get("article_id")
     year = hit.get("year")
     best_chunks = [c.get("text", "") for c in hit.get("best_chunks", []) if c.get("text")]
-    return aid, year, best_chunks
+    return aid, year, best_chunks  # type: ignore
 
 
 def _normalize_ws(text: str) -> str:
@@ -86,7 +83,7 @@ def _cut_window(full_text: str, center_start: int, center_len: int, window_chars
     return full[left:right].strip()
 
 
-def _dedupe_texts(texts: List[str]) -> List[str]:
+def _dedupe_texts(texts: list[str]) -> list[str]:
     seen = set()
     out = []
 
@@ -148,7 +145,7 @@ def _build_expanded_context_for_hit(article_store, hit: HitT) -> str:
     return merged[:FACT_CONTEXT_MAX_CHARS_PER_ARTICLE]
 
 
-def build_fact_cards_batch_prompt(hits: List[HitT], request: PipelineRequest, article_store) -> str:
+def build_fact_cards_batch_prompt(hits: list[HitT], request: PipelineRequest, article_store) -> str:
     blocks = []
 
     for i, h in enumerate(hits, start=1):
@@ -170,7 +167,7 @@ def build_fact_cards_batch_prompt(hits: List[HitT], request: PipelineRequest, ar
     return build_fact_cards_batch_user_prompt(blocks, request.query)
 
 
-def build_fact_cards_batch_prompt_fallback(hits: List[HitT], request: PipelineRequest, article_store) -> str:
+def build_fact_cards_batch_prompt_fallback(hits: list[HitT], request: PipelineRequest, article_store) -> str:
     blocks = []
 
     for i, h in enumerate(hits, start=1):
@@ -192,16 +189,16 @@ def build_fact_cards_batch_prompt_fallback(hits: List[HitT], request: PipelineRe
     return build_fact_cards_batch_user_prompt(blocks, request.query)
 
 
-def _parse_fact_cards(obj: dict) -> List[FactCard]:
+def _parse_fact_cards(obj: dict) -> list[FactCard]:
     cards_in = obj.get("cards", [])
-    fact_cards: List[FactCard] = []
+    fact_cards: list[FactCard] = []
 
     for c in cards_in:
         aid = c.get("article_id")
         if not aid:
             continue
 
-        facts: List[Fact] = []
+        facts: list[Fact] = []
         seen = set()
 
         for f in c.get("facts", []) or []:
@@ -242,9 +239,9 @@ def build_fact_cards_for_retrieved(
     llm: LLM,
     article_store,
     request: PipelineRequest,
-    retrieved_articles: List[HitT],
+    retrieved_articles: list[HitT],
     max_articles: int = 7,
-) -> List[FactCard]:
+) -> list[FactCard]:
     hits = retrieved_articles[: min(max_articles, FACT_BATCH_MAX_ARTICLES)]
 
     prompt = build_fact_cards_batch_prompt(hits, request, article_store)
@@ -269,7 +266,7 @@ def build_fact_cards_for_retrieved(
     return fact_cards
 
 
-def build_fact_check_prompt(script: str, fact_cards: List[FactCard], request: str) -> str:
+def build_fact_check_prompt(script: str, fact_cards: list[FactCard], request: str) -> str:
     facts_flat = []
     for card in fact_cards:
         for f in card.facts:
@@ -285,7 +282,7 @@ def build_fact_check_prompt(script: str, fact_cards: List[FactCard], request: st
     return build_fact_check_user_prompt(facts_flat, script, request)
 
 
-def fact_check_script(llm: LLM, script: str, fact_cards: List[FactCard], request: str) -> FactCheckReport:
+def fact_check_script(llm: LLM, script: str, fact_cards: list[FactCard], request: str) -> FactCheckReport:
     prompt = build_fact_check_prompt(script, fact_cards, request)
     out = llm.generate(prompt, system=SYSTEM_FACTCHECK, task="factcheck")
     obj = extract_json_object(out)

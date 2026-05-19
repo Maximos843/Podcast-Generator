@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any
 
 from src.types import PipelineRequest, RetrievedArticleHit, RetrievedChunkHit
-from src.retrieval.retrieval import retrieve_articles  # твоя текущая функция
+from src.retrieval.retrieval import retrieve_articles
 
 
 @dataclass(frozen=True)
@@ -14,7 +12,7 @@ class QdrantRetriever:
     collection_name: str
     reranker: Any = None
 
-    def retrieve(self, req: PipelineRequest) -> List[RetrievedArticleHit]:
+    def retrieve(self, req: PipelineRequest) -> list[RetrievedArticleHit]:
         raw = retrieve_articles(
             client=self.client,
             embedder=self.embedder,
@@ -26,7 +24,7 @@ class QdrantRetriever:
             reranker=self.reranker if req.mode == "quality" else None,
         )
 
-        hits: List[RetrievedArticleHit] = []
+        hits: list[RetrievedArticleHit] = []
         for row in raw:
             best_chunks = [
                 RetrievedChunkHit(

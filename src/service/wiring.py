@@ -1,7 +1,7 @@
 # src/service/wiring.py
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from qdrant_client import QdrantClient
 
@@ -52,7 +52,7 @@ def _build_single_llm(
             temperature=temperature,
         )
     )
-    return ReliableLLM(base, policy=LLMJsonPolicy(max_attempts=2))
+    return ReliableLLM(base, policy=LLMJsonPolicy(max_attempts=2))  # type: ignore
 
 
 def build_llm(cfg: AppConfig) -> Any:
@@ -96,7 +96,7 @@ def build_embedder(cfg: AppConfig) -> Any:
     )
 
 
-def build_reranker(cfg: AppConfig) -> Optional[Any]:
+def build_reranker(cfg: AppConfig) -> Any | None:
     return BGEReranker(
         model_name="BAAI/bge-reranker-v2-m3",
         device="cpu",

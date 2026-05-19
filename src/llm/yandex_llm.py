@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional
 import time
 import logging
 
@@ -14,7 +11,7 @@ logger = logging.getLogger("rag-llm")
 class YandexLLMConfig:
     api_key: str
     folder_id: str
-    model_uri: Optional[str] = None
+    model_uri: str | None = None
     base_url: str = "https://llm.api.cloud.yandex.net/v1"
     temperature: float = 0.1
     max_tokens: int = 4096
@@ -46,9 +43,9 @@ class YandexGPT5Client:
         prompt: str,
         system: str = "Ты — полезный ассистент.",
         *,
-        task: Optional[str] = None,
-        temperature: Optional[float] = None,
-    ) -> str:
+        task: str | None = None,
+        temperature: float | None = None,
+    ) -> str:  # type: ignore
         last_err = None
         used_temperature = self.cfg.temperature if temperature is None else temperature
 
@@ -82,7 +79,7 @@ class YandexGPT5Client:
                             "system_chars": len(system or ""),
                         },
                     )
-                return content
+                return content  # type: ignore
 
             except Exception as e:
                 last_err = e
