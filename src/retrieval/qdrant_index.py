@@ -1,5 +1,5 @@
 import gc
-from typing import List, Literal
+from typing import Literal
 import uuid
 
 import torch
@@ -7,7 +7,6 @@ from tqdm.auto import tqdm
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import (
     Distance, VectorParams, SparseVectorParams, Modifier,
-    Filter, FieldCondition, Range,
 )
 from src.retrieval.model import BaseEmbedder
 from src.config import QDrantConfig
@@ -17,7 +16,7 @@ from src.types import Chunk
 def index_chunks_in_qdrant(
     client: QdrantClient,
     embedder: BaseEmbedder,
-    chunks: List[Chunk],
+    chunks: list[Chunk],
     collection_name: str,
     mode: Literal["dense", "hybrid"] = "hybrid",
     batch_size: int = 32,

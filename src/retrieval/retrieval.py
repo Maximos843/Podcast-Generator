@@ -1,17 +1,10 @@
-# chunks_utils.py
-from __future__ import annotations
-
-import gc
 import logging
-import uuid
 from collections import defaultdict
-from typing import Optional, Literal, List, Dict, Any
+from typing import Literal, Any
 
-import torch
 from tqdm.auto import tqdm
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import (
-    Distance, VectorParams, SparseVectorParams, Modifier,
     Filter, FieldCondition, Range,
 )
 
@@ -26,8 +19,8 @@ logger = logging.getLogger("rag-service")
 
 
 
-def make_chunks(articles: List[Article]) -> List[Chunk]:
-    chunks: List[Chunk] = []
+def make_chunks(articles: list[Article]) -> list[Chunk]:
+    chunks: list[Chunk] = []
     for art in tqdm(articles, total=len(articles), desc="chunking articles"):
         texts = chunk_text_by_sentences(art.cleaned_text)
         for idx, txt in enumerate(texts):
@@ -37,7 +30,7 @@ def make_chunks(articles: List[Article]) -> List[Chunk]:
 
 
 
-def _year_filter(year: Optional[int]) -> Optional[Filter]:
+def _year_filter(year: int | None) -> Filter | None:
     if year is None:
         return None
     return Filter(must=[FieldCondition(key="year", range=Range(gte=year, lte=year))])
@@ -49,8 +42,8 @@ def search_chunks_dense(
     query_text: str,
     collection_name: str,
     top_k_chunks: int,
-    year: Optional[int] = None,
-    using: Optional[str] = None,
+    year: int | None = None,
+    using: str | None = None,
 ):
     qvec = embedder.embed_query(query_text).tolist()
     res = client.query_points(
@@ -71,7 +64,7 @@ def search_chunks_hybrid_rrf(
     collection_name: str,
     top_k_chunks: int,
     prefetch_k: int,
-    year: Optional[int] = None,
+    year: int | None = None,
 ):
     dense_q = embedder.embed_query(query_text).tolist()
     q_filter = _year_filter(year)
@@ -109,13 +102,13 @@ def _payload_has_required(payload: dict) -> bool:
 
 
 def _aggregate_points_to_articles(
-    points: List[models.ScoredPoint],
+    points: list[models.ScoredPoint],
     *,
     top_k_articles: int,
     per_article_top_chunks: int,
     score_agg: Literal["max", "sum"] = "max",
-) -> List[Dict[str, Any]]:
-    by_article: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+) -> list[dict[str, Any]]:
+    by_article: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     bad_payload_cnt = 0
 
@@ -126,7 +119,7 @@ def _aggregate_points_to_articles(
             continue
 
         art_id = payload.get(FULL_ARTICLE_ID)
-        by_article[art_id].append(
+        by_article[art_id].append(  # type: ignore
             {
                 "chunk_id": payload.get(CHUNK_ID),
                 "text": payload.get(TEXT, ""),
@@ -138,7 +131,7 @@ def _aggregate_points_to_articles(
     if bad_payload_cnt:
         logger.warning("qdrant_payload_invalid", extra={"bad_payload_cnt": bad_payload_cnt})
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for art_id, lst in by_article.items():
         scores = [x["score"] for x in lst]
         art_score = sum(scores) if score_agg == "sum" else (max(scores) if scores else 0.0)
@@ -162,14 +155,14 @@ def _aggregate_points_to_articles(
 def _rerank_chunks(
     reranker: BaseReranker,
     query_text: str,
-    points: List[models.ScoredPoint],
+    points: list[models.ScoredPoint],
     *,
     batch_size: int = 16,
-) -> List[models.ScoredPoint]:
+) -> list[models.ScoredPoint]:
     texts = [(p.payload or {}).get("text", "") for p in points]
     scores = reranker.score(query_text, texts, batch_size=batch_size)
 
-    out: List[models.ScoredPoint] = []
+    out: list[models.ScoredPoint] = []
     for p, s in zip(points, scores):
         out.append(models.ScoredPoint(
             id=p.id,
@@ -191,13 +184,13 @@ def retrieve_articles(
     collection_name: str,
     mode: Literal["fast", "quality"] = "quality",
     retrieval: Literal["dense", "hybrid"] = "hybrid",
-    top_k_articles: Optional[int] = None,
-    candidate_pool_chunks: Optional[int] = None,
-    prefetch_k: Optional[int] = None,
-    per_article_top_chunks: Optional[int] = None,
-    year: Optional[int] = None,
+    top_k_articles: int | None = None,
+    candidate_pool_chunks: int | None = None,
+    prefetch_k: int | None = None,
+    per_article_top_chunks: int | None = None,
+    year: int | None = None,
     score_agg: Literal["max", "sum"] = "max",
-    reranker: Optional[BaseReranker] = None,
+    reranker: BaseReranker | None = None,
     rerank_batch_size: int = 16,
 ):
     if prefetch_k is None:

@@ -1,14 +1,12 @@
 # article_store.py
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import json
 import sqlite3
 from dataclasses import dataclass
-from typing import Optional, Dict, Iterable, Tuple
+from typing import Iterable
 from functools import lru_cache
-
-# Если у тебя уже есть extract_year_from_path / clean_article_text — импортни их:
-# from preprocessing import extract_year_from_path, clean_article_text
 
 
 @dataclass(frozen=True)
@@ -17,28 +15,29 @@ class ArticleRecord:
     page_path: str
     page_idx: int
     article_id: str
-    year: Optional[int]
+    year: int | None
     cleaned_text: str
-    original_text: Optional[str] = None
+    original_text: str | None = None
 
 
 def make_full_article_id(page_path: str, article_id: str) -> str:
     return f"{page_path}#article_{article_id}"
 
 
-class BaseArticleStore:
-    def get(self, full_article_id: str) -> Optional[ArticleRecord]:
+class BaseArticleStore(ABC):
+    @abstractmethod
+    def get(self, full_article_id: str) -> ArticleRecord | None:
         raise NotImplementedError
 
     def __contains__(self, full_article_id: str) -> bool:
         return self.get(full_article_id) is not None
 
-    def get_many(self, full_article_ids: Iterable[str]) -> Dict[str, ArticleRecord]:
+    def get_many(self, full_article_ids: Iterable[str]) -> dict[str, ArticleRecord]:
         """
         По умолчанию — наивно через get() (подойдет для InMemory).
         SQLite переопределит на один SQL-запрос.
         """
-        out: Dict[str, ArticleRecord] = {}
+        out: dict[str, ArticleRecord] = {}
         for fid in full_article_ids:
             rec = self.get(fid)
             if rec is not None:
@@ -47,11 +46,11 @@ class BaseArticleStore:
 
 
 class InMemoryArticleStore(BaseArticleStore):
-    def __init__(self, records: Dict[str, ArticleRecord]):
+    def __init__(self, records: dict[str, ArticleRecord]):
         self._records = records
 
     @lru_cache(maxsize=10_000)
-    def get(self, full_article_id: str) -> Optional[ArticleRecord]:
+    def get(self, full_article_id: str) -> ArticleRecord | None:  # type: ignore
         return self._records.get(full_article_id)
 
     @classmethod
@@ -76,11 +75,11 @@ class InMemoryArticleStore(BaseArticleStore):
             pages = json.load(f)
 
         page_paths = list(pages.keys())
-        records: Dict[str, ArticleRecord] = {}
+        records: dict[str, ArticleRecord] = {}
 
         for page_idx, page_path in enumerate(page_paths):
             year = extract_year_fn(page_path) if extract_year_fn else None
-            article_map: Dict[str, str] = pages[page_path]
+            article_map: dict[str, str] = pages[page_path]
 
             for article_id, raw_text in article_map.items():
                 cleaned_text = raw_text
@@ -180,7 +179,7 @@ class SQLiteArticleStore(BaseArticleStore):
             con.close()
 
     @lru_cache(maxsize=10_000)
-    def get(self, full_article_id: str) -> Optional[ArticleRecord]:
+    def get(self, full_article_id: str) -> ArticleRecord | None:  # type: ignore
         con = self._connect()
         try:
             cur = con.execute("""
@@ -224,7 +223,7 @@ class SQLiteArticleStore(BaseArticleStore):
         def gen_records():
             for page_idx, page_path in enumerate(page_paths):
                 year = extract_year_fn(page_path) if extract_year_fn else None
-                article_map: Dict[str, str] = pages[page_path]
+                article_map: dict[str, str] = pages[page_path]
                 for article_id, raw_text in article_map.items():
                     cleaned_text = raw_text
                     if clean and clean_text_fn is not None:
@@ -245,7 +244,7 @@ class SQLiteArticleStore(BaseArticleStore):
         store.bulk_upsert(gen_records())
         return store
 
-    def get_many(self, full_article_ids: Iterable[str]) -> Dict[str, ArticleRecord]:
+    def get_many(self, full_article_ids: Iterable[str]) -> dict[str, ArticleRecord]:
         ids = [x for x in full_article_ids if x]
         if not ids:
             return {}
@@ -253,7 +252,7 @@ class SQLiteArticleStore(BaseArticleStore):
         # SQLite ограничивает количество параметров в IN (...).
         # 500 — безопасно для разных сборок.
         CHUNK = 500
-        out: Dict[str, ArticleRecord] = {}
+        out: dict[str, ArticleRecord] = {}
 
         con = self._connect()
         try:

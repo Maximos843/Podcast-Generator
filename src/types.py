@@ -1,12 +1,11 @@
-from __future__ import annotations
-from typing import List, Optional, Literal
+from typing import Literal
 from pydantic import BaseModel, Field
 from dataclasses import dataclass
 
 
 class PipelineRequest(BaseModel):
     query: str
-    year: Optional[int] = None
+    year: int | None = None
     mode: Literal["fast", "quality"] = "quality"
     retrieval: Literal["dense", "hybrid"] = "hybrid"
     max_articles_for_facts: int = 7
@@ -14,17 +13,17 @@ class PipelineRequest(BaseModel):
 
 
 class RetrievedChunkHit(BaseModel):
-    chunk_id: Optional[int] = None
+    chunk_id: int | None = None
     text: str
     score: float
-    year: Optional[int] = None
+    year: int | None = None
 
 
 class RetrievedArticleHit(BaseModel):
     article_id: str
     score: float
-    year: Optional[int] = None
-    best_chunks: List[RetrievedChunkHit] = Field(default_factory=list)
+    year: int | None = None
+    best_chunks: list[RetrievedChunkHit] = Field(default_factory=list)
 
 
 class Fact(BaseModel):
@@ -36,30 +35,30 @@ class Fact(BaseModel):
 
 class FactCard(BaseModel):
     article_id: str
-    year: Optional[int] = None
-    title_guess: Optional[str] = None
-    facts: List[Fact] = Field(default_factory=list)
+    year: int | None = None
+    title_guess: str | None = None
+    facts: list[Fact] = Field(default_factory=list)
 
 
 class OutlineBlock(BaseModel):
     title: str
     goal: str
-    facts_used: List[str] = Field(default_factory=list)
-    transition: Optional[str] = None
+    facts_used: list[str] = Field(default_factory=list)
+    transition: str | None = None
 
 
 class Outline(BaseModel):
-    outline: List[OutlineBlock] = Field(default_factory=list)
+    outline: list[OutlineBlock] = Field(default_factory=list)
 
 
 class UnsupportedClaim(BaseModel):
     claim: str
     why_unsupported: str
-    suggested_fix: Optional[str] = None
+    suggested_fix: str | None = None
 
 
 class FactCheckReport(BaseModel):
-    unsupported: List[UnsupportedClaim] = Field(default_factory=list)
+    unsupported: list[UnsupportedClaim] = Field(default_factory=list)
 
 
 class PipelineTimingsMs(BaseModel):
@@ -72,13 +71,13 @@ class PipelineTimingsMs(BaseModel):
 
 class PipelineResponse(BaseModel):
     request_id: str
-    hits: List[RetrievedArticleHit] = Field(default_factory=list)
-    fact_cards: List[FactCard] = Field(default_factory=list)
-    outline: Optional[Outline] = None
+    hits: list[RetrievedArticleHit] = Field(default_factory=list)
+    fact_cards: list[FactCard] = Field(default_factory=list)
+    outline: Outline | None = None
     script: str = ""
-    fact_check: Optional[FactCheckReport] = None
+    fact_check: FactCheckReport | None = None
     timings: PipelineTimingsMs = Field(default_factory=PipelineTimingsMs)
-    debug: Optional[dict] = None
+    debug: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -86,7 +85,7 @@ class Article:
     page_path: str
     page_idx: int
     article_id: str
-    year: Optional[int]
+    year: int | None
     original_text: str
     cleaned_text: str
 

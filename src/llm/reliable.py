@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Type, TypeVar, Optional
+from typing import Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from src.generation.json_extract import extract_json_object
@@ -17,7 +15,7 @@ class LLMJsonPolicy:
 
 
 class ReliableLLM(LLM):
-    def __init__(self, llm: LLM, policy: Optional[LLMJsonPolicy] = None):
+    def __init__(self, llm: LLM, policy: LLMJsonPolicy | None = None):
         self.llm = llm
         self.policy = policy or LLMJsonPolicy()
 
@@ -26,8 +24,8 @@ class ReliableLLM(LLM):
         prompt: str,
         system: str | None = None,
         *,
-        task: Optional[str] = None,
-        temperature: Optional[float] = None,
+        task: str | None = None,
+        temperature: float | None = None,
     ) -> str:
         return self.llm.generate(
             prompt,
@@ -42,13 +40,13 @@ class ReliableLLM(LLM):
         model: Type[T],
         system: str | None = None,
         *,
-        task: Optional[str] = None,
-        temperature: Optional[float] = None,
+        task: str | None = None,
+        temperature: float | None = None,
     ) -> T:
         last_err: Exception | None = None
         sys = system
 
-        for attempt in range(1, self.policy.max_attempts + 1):
+        for _ in range(1, self.policy.max_attempts + 1):
             out = self.llm.generate(
                 prompt,
                 system=sys or "Ты — полезный ассистент.",

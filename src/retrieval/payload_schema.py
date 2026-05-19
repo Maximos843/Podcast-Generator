@@ -1,6 +1,3 @@
-# src/retrieval/payload_schema.py
-from __future__ import annotations
-
 FULL_ARTICLE_ID = "full_article_id"
 CHUNK_ID = "chunk_id"
 TEXT = "text"

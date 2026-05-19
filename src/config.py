@@ -1,10 +1,6 @@
-# src/config.py
-from __future__ import annotations
-
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,12 +8,10 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class QDrantConfig:
-    # --- hybrid (named vectors) ---
     DENSE_VECTOR_NAME: str = "dense"
     BM25_VECTOR_NAME: str = "bm25"
     BM25_MODEL: str = "Qdrant/bm25"
 
-    # --- retrieve defaults ---
     PREFETCH_K: int = 150
     CANDIDATE_POOL_CHUNKS_FAST: int = 50
     CANDIDATE_POOL_CHUNKS_QUALITY: int = 75
@@ -31,24 +25,20 @@ YEAR_RE = re.compile(r"_(\d{4})_")
 
 @dataclass(frozen=True)
 class AppConfig:
-    # --- runtime ---
     env: str = "dev"
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # --- qdrant ---
     qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: Optional[str] = None
+    qdrant_api_key: str | None = None
     qdrant_collection: str = "podcast_chunks"
 
-    # --- article store ---
     sqlite_db_path: str = "articles.sqlite"
-    json_articles_path: Optional[str] = None  # если хочешь in-memory из JSON
+    json_articles_path: str | None = None
 
-    # --- yandex llm ---
-    yandex_api_key: Optional[str] = None
-    yandex_folder_id: Optional[str] = None
-    yandex_model_uri: Optional[str] = None
+    yandex_api_key: str | None = None
+    yandex_folder_id: str | None = None
+    yandex_model_uri: str | None = None
 
 
 
@@ -61,7 +51,6 @@ class AppConfig:
     script_temperature: float = 0.5
     repair_temperature: float = 0.2
 
-    # --- embedder ---
     embedder_model_name: str = "intfloat/multilingual-e5-base"
     embedder_device: str = "cpu"
 

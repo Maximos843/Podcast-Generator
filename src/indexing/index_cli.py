@@ -1,6 +1,3 @@
-# src/indexing/index_cli.py
-from __future__ import annotations
-
 import argparse
 
 from qdrant_client import QdrantClient
@@ -40,7 +37,7 @@ def main():
         batch_size=args.batch_size,
     )
 
-    result = run_indexing(client=client, embedder=embedder, cfg=cfg)
+    result = run_indexing(client=client, embedder=embedder, cfg=cfg)  # type: ignore
     print("DONE:", result)
 
 

@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import List, Dict, Any, Tuple
+from typing import Any
 import re
 
 from src.types import FactCard
@@ -16,7 +14,7 @@ from src.llm.base import LLM
 FACT_REF_RE = re.compile(r"\[A\d+-F\d+\]")
 
 
-def build_outline_and_script_prompt(query: str, fact_cards: List[FactCard]) -> str:
+def build_outline_and_script_prompt(query: str, fact_cards: list[FactCard]) -> str:
     compact = []
     facts_flat = []
 
@@ -44,7 +42,7 @@ def _script_needs_retry(script: str) -> bool:
     return words < 1500 or refs < 10
 
 
-def generate_outline_and_script(llm: LLM, query: str, fact_cards: List[FactCard]) -> Tuple[Dict[str, Any], str]:
+def generate_outline_and_script(llm: LLM, query: str, fact_cards: list[FactCard]) -> tuple[dict[str, Any], str]:
     prompt = build_outline_and_script_prompt(query, fact_cards)
     out = llm.generate(prompt, system=SYSTEM_SCRIPT_GENERATION, task="script")
     obj = extract_json_object(out)
@@ -68,7 +66,7 @@ def generate_outline_and_script(llm: LLM, query: str, fact_cards: List[FactCard]
     return {"outline": outline}, script
 
 
-def build_outline_and_script_prompt_strict_refs(query: str, fact_cards: List[FactCard]) -> str:
+def build_outline_and_script_prompt_strict_refs(query: str, fact_cards: list[FactCard]) -> str:
     compact = []
     facts_flat = []
     known = []
