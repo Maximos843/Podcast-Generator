@@ -1,0 +1,15 @@
+setuptools>=60,<82
+wheel>=0.40
+
+numpy==1.26.4
+tqdm==4.67.1
+sentence-transformers==5.2.0
+qdrant_client==1.16.2
+openai==2.15.0
+pandas==2.1.4
+yandex-cloud-ml-sdk==0.17.1
+python-dotenv==1.2.1
+fastapi==0.128.0
+uvicorn==0.40.0
+prometheus_client==0.24.1
+FlagEmbedding==1.3.5
