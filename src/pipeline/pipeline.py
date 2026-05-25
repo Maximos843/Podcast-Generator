@@ -8,7 +8,7 @@ from src.generation.fact_checking import (
 from src.generation.script_generation import generate_outline_and_script
 
 
-def run_pipeline(
+async def run_pipeline(
     *,
     client,
     embedder,
@@ -34,7 +34,7 @@ def run_pipeline(
     )
     t1 = perf_counter()
 
-    fact_cards = build_fact_cards_for_retrieved(
+    fact_cards = await build_fact_cards_for_retrieved(
         llm=llm,
         article_store=article_store,
         retrieved_articles=hits,  # type: ignore
@@ -42,10 +42,10 @@ def run_pipeline(
     )
     t2 = perf_counter()
 
-    outline, script = generate_outline_and_script(llm, query, fact_cards)
+    outline, script = await generate_outline_and_script(llm, query, fact_cards)
     t3 = perf_counter()
 
-    report = fact_check_script(llm, script, fact_cards, query)
+    report = await fact_check_script(llm, script, fact_cards, query)
     t4 = perf_counter()
 
     return {

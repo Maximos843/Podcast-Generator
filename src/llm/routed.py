@@ -32,7 +32,6 @@ class RoutedLLM(LLM):
     def _pick_temperature(self, task: str | None, temperature: float | None) -> float:
         if temperature is not None:
             return temperature
-
         if task == "facts":
             return self.routing.facts_temperature
         if task == "factcheck":
@@ -43,10 +42,9 @@ class RoutedLLM(LLM):
             return self.routing.script_temperature
         if task == "repair":
             return self.routing.repair_temperature
-
         return 0.1
 
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system: str = "Ты — полезный ассистент.",
@@ -56,7 +54,7 @@ class RoutedLLM(LLM):
     ) -> str:
         llm = self._pick_llm(task)
         used_temperature = self._pick_temperature(task, temperature)
-        return llm.generate(
+        return await llm.generate(
             prompt,
             system=system,
             task=task,
