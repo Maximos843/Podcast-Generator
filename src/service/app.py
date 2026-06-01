@@ -47,12 +47,11 @@ def create_app() -> FastAPI:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.post("/generate", response_model=PipelineResponse)
-    def generate(body: PipelineRequest, request: Request) -> PipelineResponse:
+    async def generate(body: PipelineRequest, request: Request) -> PipelineResponse:  # <-- async def
         rid = getattr(request.state, "request_id", None)
-
         t0 = time.perf_counter()
         try:
-            resp = service.generate(body, request_id=rid)
+            resp = await service.generate(body, request_id=rid)  # <-- await
         except Exception as e:
             GENERATE_ERRORS.labels(
                 mode=body.mode,
@@ -63,7 +62,6 @@ def create_app() -> FastAPI:
         finally:
             dt = time.perf_counter() - t0
             GENERATE_LATENCY.labels(mode=body.mode, retrieval=body.retrieval).observe(dt)
-
         return resp
 
     pipeline = PipelineService(build_deps(cfg))

@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import asyncio
 import uuid
 from dataclasses import dataclass
 from time import perf_counter
@@ -74,12 +73,11 @@ class PipelineService:
     async def generate(self, req: PipelineRequest, request_id: str | None = None) -> PipelineResponse:
         req = apply_policy(req)
         rid = request_id or str(uuid.uuid4())
-
         t0 = perf_counter()
         timings = PipelineTimingsMs()
 
         t = perf_counter()
-        hits = self.retriever.retrieve(req)
+        hits = await asyncio.to_thread(self.retriever.retrieve, req)
         timings.retrieval_ms = int((perf_counter() - t) * 1000)
 
         t = perf_counter()
@@ -94,11 +92,10 @@ class PipelineService:
 
         t = perf_counter()
         outline, script = await generate_outline_and_script(self.deps.llm, req.query, fact_cards)
-
         ref_check = check_fact_refs(script, fact_cards)
         if not ref_check.ok:
             strict_prompt = build_outline_and_script_prompt_strict_refs(req.query, fact_cards)
-            strict_out = strict_out = self.deps.llm.generate(
+            strict_out = await self.deps.llm.generate(
                 strict_prompt,
                 system=SYSTEM_STRICT_REFS_GENERATION,
                 task="strict_refs",
@@ -109,23 +106,20 @@ class PipelineService:
                 strict_ref_check = check_fact_refs(strict_script, fact_cards)
                 if strict_ref_check.ok:
                     script = strict_script
-
         timings.generation_ms = int((perf_counter() - t) * 1000)
 
         t = perf_counter()
         report = None
         if req.mode == "quality":
             report = await fact_check_script(self.deps.llm, script, fact_cards, req.query)
-
             if report and report.unsupported:
                 repaired_script = await _repair_with_factcheck(self.deps.llm, req.query, script, report)
                 repaired_ref_check = check_fact_refs(repaired_script, fact_cards)
-
                 if repaired_ref_check.ok:
                     script = repaired_script
-                    report = fact_check_script(self.deps.llm, script, fact_cards, req.query)
-
+                    report = await fact_check_script(self.deps.llm, script, fact_cards, req.query)
         timings.fact_check_ms = int((perf_counter() - t) * 1000)
+
         timings.total_ms = int((perf_counter() - t0) * 1000)
 
         debug = None
