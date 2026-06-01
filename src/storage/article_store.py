@@ -1,48 +1,8 @@
-# article_store.py
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
 import json
 import sqlite3
-from dataclasses import dataclass
 from typing import Iterable
 from functools import lru_cache
-
-
-@dataclass(frozen=True)
-class ArticleRecord:
-    full_article_id: str
-    page_path: str
-    page_idx: int
-    article_id: str
-    year: int | None
-    cleaned_text: str
-    original_text: str | None = None
-
-
-def make_full_article_id(page_path: str, article_id: str) -> str:
-    return f"{page_path}#article_{article_id}"
-
-
-class BaseArticleStore(ABC):
-    @abstractmethod
-    def get(self, full_article_id: str) -> ArticleRecord | None:
-        raise NotImplementedError
-
-    def __contains__(self, full_article_id: str) -> bool:
-        return self.get(full_article_id) is not None
-
-    def get_many(self, full_article_ids: Iterable[str]) -> dict[str, ArticleRecord]:
-        """
-        По умолчанию — наивно через get() (подойдет для InMemory).
-        SQLite переопределит на один SQL-запрос.
-        """
-        out: dict[str, ArticleRecord] = {}
-        for fid in full_article_ids:
-            rec = self.get(fid)
-            if rec is not None:
-                out[fid] = rec
-        return out
+from src.storage.base import ArticleRecord, BaseArticleStore
 
 
 class InMemoryArticleStore(BaseArticleStore):
@@ -59,7 +19,6 @@ class InMemoryArticleStore(BaseArticleStore):
         json_path: str,
         *,
         clean: bool = False,
-        # hooks:
         extract_year_fn=None,
         clean_text_fn=None,
         dedupe_adjacent: bool = True,
@@ -89,7 +48,7 @@ class InMemoryArticleStore(BaseArticleStore):
                 if not cleaned_text or not cleaned_text.strip():
                     continue
 
-                fid = make_full_article_id(page_path, article_id)
+                fid = cls.make_full_article_id(page_path, article_id)
                 records[fid] = ArticleRecord(
                     full_article_id=fid,
                     page_path=page_path,
@@ -215,7 +174,6 @@ class SQLiteArticleStore(BaseArticleStore):
     ) -> "SQLiteArticleStore":
         store = cls(db_path)
 
-        # загружаем JSON и стримим в bulk_upsert
         with open(json_path, "r", encoding="utf-8") as f:
             pages = json.load(f)
 
@@ -230,7 +188,7 @@ class SQLiteArticleStore(BaseArticleStore):
                         cleaned_text = clean_text_fn(raw_text, dedupe_adjacent=dedupe_adjacent)
                     if not cleaned_text or not cleaned_text.strip():
                         continue
-                    fid = make_full_article_id(page_path, article_id)
+                    fid = cls.make_full_article_id(page_path, article_id)
                     yield ArticleRecord(
                         full_article_id=fid,
                         page_path=page_path,
@@ -249,8 +207,6 @@ class SQLiteArticleStore(BaseArticleStore):
         if not ids:
             return {}
 
-        # SQLite ограничивает количество параметров в IN (...).
-        # 500 — безопасно для разных сборок.
         CHUNK = 500
         out: dict[str, ArticleRecord] = {}
 

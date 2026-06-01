@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 import time
 import logging
+import asyncio
 
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 
 logger = logging.getLogger("rag-llm")
 
@@ -30,7 +31,7 @@ class YandexGPT5Client:
         if cfg.data_logging_enabled is False:
             default_headers["x-data-logging-enabled"] = "false"
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=cfg.api_key,
             base_url=cfg.base_url,
             project=cfg.folder_id,
@@ -38,7 +39,7 @@ class YandexGPT5Client:
             timeout=cfg.request_timeout_sec,
         )
 
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system: str = "Ты — полезный ассистент.",
@@ -51,7 +52,7 @@ class YandexGPT5Client:
 
         for attempt in range(1, self.cfg.max_retries + 1):
             try:
-                resp = self.client.chat.completions.create(
+                resp = await self.client.chat.completions.create(
                     model=self.model_uri,
                     temperature=used_temperature,
                     max_tokens=self.cfg.max_tokens,

@@ -19,7 +19,7 @@ class ReliableLLM(LLM):
         self.llm = llm
         self.policy = policy or LLMJsonPolicy()
 
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system: str | None = None,
@@ -27,14 +27,14 @@ class ReliableLLM(LLM):
         task: str | None = None,
         temperature: float | None = None,
     ) -> str:
-        return self.llm.generate(
+        return await self.llm.generate(
             prompt,
             system=system or "Ты — полезный ассистент.",
             task=task,
             temperature=temperature,
         )
 
-    def generate_json(
+    async def generate_json(
         self,
         prompt: str,
         model: Type[T],
@@ -47,7 +47,7 @@ class ReliableLLM(LLM):
         sys = system
 
         for _ in range(1, self.policy.max_attempts + 1):
-            out = self.llm.generate(
+            out = await self.llm.generate(
                 prompt,
                 system=sys or "Ты — полезный ассистент.",
                 task=task,

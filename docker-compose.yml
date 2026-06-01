@@ -1,0 +1,94 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: podcast-qdrant
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC (опционально)
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  podcast-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: podcast-generator
+    ports:
+      - "8000:8000"
+    environment:
+      # App config
+      - ENV=${ENV:-prod}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # Yandex Cloud
+      - YANDEX_API_KEY=${YANDEX_API_KEY}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
+      - YANDEX_URL=${YANDEX_URL:-https://llm.api.cloud.yandex.net/v1}
+      
+      # Qdrant
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-podcast_articles}
+      
+      # Storage
+      - SQLITE_DB_PATH=/app/data/articles.db
+      - JSON_ARTICLES_PATH=${JSON_ARTICLES_PATH:-}
+      
+      # Model params
+      - EMBEDDER_MODEL_NAME=${EMBEDDER_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
+      - EMBEDDER_DEVICE=${EMBEDDER_DEVICE:-cpu}
+      
+      # Temperatures
+      - LLM_DEFAULT_TEMPERATURE=${LLM_DEFAULT_TEMPERATURE:-0.1}
+      - FACTS_TEMPERATURE=${FACTS_TEMPERATURE:-0.1}
+      - FACTCHECK_TEMPERATURE=${FACTCHECK_TEMPERATURE:-0.1}
+      - SCRIPT_TEMPERATURE=${SCRIPT_TEMPERATURE:-0.3}
+      - REPAIR_TEMPERATURE=${REPAIR_TEMPERATURE:-0.2}
+      - STRICT_REFS_TEMPERATURE=${STRICT_REFS_TEMPERATURE:-0.1}
+      
+      # UI toggle
+      - ENABLE_UI=${ENABLE_UI:-false}
+    volumes:
+      - ./data:/app/data:ro  # read-only для источников
+      - app_logs:/app/logs
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+  # Опционально: Prometheus для метрик
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: podcast-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  app_logs:
+  prometheus_data:
