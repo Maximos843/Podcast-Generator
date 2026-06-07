@@ -5,6 +5,10 @@ from functools import lru_cache
 from src.storage.base import ArticleRecord, BaseArticleStore
 
 
+def make_full_article_id(page_path: str, article_id: str) -> str:
+        return f"{page_path}#article_{article_id}"
+
+
 class InMemoryArticleStore(BaseArticleStore):
     def __init__(self, records: dict[str, ArticleRecord]):
         self._records = records
@@ -48,7 +52,7 @@ class InMemoryArticleStore(BaseArticleStore):
                 if not cleaned_text or not cleaned_text.strip():
                     continue
 
-                fid = cls.make_full_article_id(page_path, article_id)
+                fid = make_full_article_id(page_path, article_id)
                 records[fid] = ArticleRecord(
                     full_article_id=fid,
                     page_path=page_path,
@@ -188,7 +192,7 @@ class SQLiteArticleStore(BaseArticleStore):
                         cleaned_text = clean_text_fn(raw_text, dedupe_adjacent=dedupe_adjacent)
                     if not cleaned_text or not cleaned_text.strip():
                         continue
-                    fid = cls.make_full_article_id(page_path, article_id)
+                    fid = make_full_article_id(page_path, article_id)
                     yield ArticleRecord(
                         full_article_id=fid,
                         page_path=page_path,

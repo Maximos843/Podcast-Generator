@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 import time
 
@@ -50,19 +51,25 @@ def create_app() -> FastAPI:
     app.state.cache = cache
 
     @app.get("/health")
-    def health():
+    async def health():
         qdrant_ok = True
+        cache_ok = False
+
         try:
-            deps.client.get_collections()
+            await asyncio.to_thread(deps.client.get_collections)
         except Exception:
             qdrant_ok = False
-        
-        cache_ok = app.state.cache is not None and app.state.cache.is_available()
-        
+
+        if app.state.cache is not None:
+            try:
+                cache_ok = await app.state.cache.is_available()
+            except Exception:
+                cache_ok = False
+
         return {
-            "status": "ok" if (qdrant_ok and cache_ok) else "degraded", 
+            "status": "ok" if qdrant_ok and cache_ok else "degraded",
             "qdrant": qdrant_ok,
-            "cache": cache_ok
+            "cache": cache_ok,
         }
 
     @app.get("/metrics")

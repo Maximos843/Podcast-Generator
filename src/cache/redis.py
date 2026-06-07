@@ -39,3 +39,12 @@ class RedisCache:
             await self._client.setex(f"{self.prefix}{key}", ttl, json.dumps(value, ensure_ascii=False))
         except Exception as e:
             logger.warning(f"Cache SET error: {e}")
+    
+    async def is_available(self) -> bool:
+        if not self._client:
+            return False
+
+        try:
+            return bool(await self._client.ping())
+        except Exception:
+            return False

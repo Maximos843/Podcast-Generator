@@ -68,27 +68,60 @@ class SentenceTransformerEmbedder:
 
 
 class BGEReranker:
-    """
-    FlagEmbedding / BGE reranker wrapper.
-    """
+
     def __init__(
         self,
         model_name: str = "BAAI/bge-reranker-v2-m3",
         device: str = "cpu",
-        use_fp16: bool = True,
+        use_fp16: bool = False,
+        max_length: int = 512,
     ):
-        try:
-            from FlagEmbedding import FlagReranker  # type: ignore
-        except Exception as e:
-            raise ImportError(
-                "Нужен пакет FlagEmbedding: pip install FlagEmbedding\n"
-                f"Ошибка: {e}"
-            )
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
         self.model_name = model_name
         self.device = device
-        self.model = FlagReranker(model_name, use_fp16=use_fp16, device=device)
+        self.max_length = max_length
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        if device == "cuda" and use_fp16:
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+            )
+        else:
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
+        self.model.to(device)
+        self.model.eval()
 
     def score(self, query: str, passages: list[str], batch_size: int = 16) -> list[float]:
-        pairs = [[query, p] for p in passages]
-        scores = self.model.compute_score(pairs, batch_size=batch_size)
-        return [float(s) for s in scores]
+        import torch
+
+        if not passages:
+            return []
+
+        scores: list[float] = []
+
+        for i in range(0, len(passages), batch_size):
+            batch_passages = passages[i : i + batch_size]
+            pairs = [[query, passage] for passage in batch_passages]
+
+            inputs = self.tokenizer(
+                pairs,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=self.max_length,
+            )
+
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                logits = self.model(**inputs, return_dict=True).logits
+                batch_scores = logits.view(-1).float().cpu().tolist()
+
+            scores.extend(float(s) for s in batch_scores)
+
+        return scores

@@ -20,17 +20,10 @@ services:
     container_name: podcast-qdrant
     ports:
       - "6333:6333"  # HTTP API
-      - "6334:6334"  # gRPC (опционально)
+      - "6334:6334"  # gRPC (опционально)curl http://localhost:6333/collections
     volumes:
       - qdrant_data:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   podcast-service:
     build:
@@ -52,10 +45,10 @@ services:
       # Qdrant
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-podcast_articles}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-podcast_chunks}
       
       # Storage
-      - SQLITE_DB_PATH=/app/data/articles.db
+      - SQLITE_DB_PATH=/app/data/articles.sqlite
       - JSON_ARTICLES_PATH=${JSON_ARTICLES_PATH:-}
       
       # Model params
@@ -77,13 +70,11 @@ services:
       - REDIS_URL=redis://redis:6379
       - CACHE_TTL=3600
     volumes:
-      - ./data:/app/data:ro  # read-only для источников
+      - ./data:/app/data  # read-only для источников
       - app_logs:/app/logs
     depends_on:
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - qdrant
+      - redis
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

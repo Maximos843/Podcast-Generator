@@ -34,7 +34,3 @@ class BaseArticleStore(ABC):
             if rec is not None:
                 out[fid] = rec
         return out
-
-    @staticmethod
-    def make_full_article_id(page_path: str, article_id: str) -> str:
-        return f"{page_path}#article_{article_id}"

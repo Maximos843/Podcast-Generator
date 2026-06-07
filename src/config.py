@@ -70,11 +70,11 @@ class AppConfig:
             port=geti("PORT", 8000),
 
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
+            #qdrant_api_key=os.getenv("QDRANT_API_KEY"),
 
             qdrant_collection=os.getenv("QDRANT_COLLECTION", "podcast_chunks"),
 
-            sqlite_db_path=os.getenv("SQLITE_DB_PATH", "data/articles.sqlite"),
+            sqlite_db_path=os.getenv("SQLITE_DB_PATH", "app/data/articles.sqlite"),
             json_articles_path=os.getenv("JSON_ARTICLES_PATH"),
 
             yandex_api_key=os.getenv("YANDEX_API_KEY", '***'),

@@ -17,13 +17,14 @@ from src.retrieval.model import SentenceTransformerEmbedder, BGEReranker
 
 
 def build_qdrant(cfg: AppConfig) -> QdrantClient:
-    if cfg.qdrant_api_key:
-        return QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key)
+    #if cfg.qdrant_api_key:
+    #    return QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key)
     return QdrantClient(url=cfg.qdrant_url)
 
 
 def build_article_store(cfg: AppConfig) -> Any:
     if cfg.env != "dev" or not cfg.json_articles_path:
+        print(cfg.sqlite_db_path)
         return SQLiteArticleStore(cfg.sqlite_db_path)
 
     return InMemoryArticleStore.from_json(
