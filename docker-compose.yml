@@ -2,6 +2,19 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: podcast-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   qdrant:
     image: qdrant/qdrant:v1.12.4
     container_name: podcast-qdrant
@@ -59,11 +72,17 @@ services:
       
       # UI toggle
       - ENABLE_UI=${ENABLE_UI:-false}
+
+      - CACHE_ENABLED=true
+      - REDIS_URL=redis://redis:6379
+      - CACHE_TTL=3600
     volumes:
       - ./data:/app/data:ro  # read-only для источников
       - app_logs:/app/logs
     depends_on:
       qdrant:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:

@@ -18,6 +18,8 @@ from src.generation.script_generation import (
 )
 from src.generation.json_extract import extract_json_object
 from src.pipeline.policy import apply_policy
+from src.cache.redis import RedisCache
+from src.cache.utils import get_cache_key
 
 
 @dataclass(frozen=True)
@@ -61,7 +63,7 @@ async def _repair_with_factcheck(llm, query: str, script: str, report) -> str:
 
 
 class PipelineService:
-    def __init__(self, deps: PipelineDeps):
+    def __init__(self, deps: PipelineDeps, cache: RedisCache | None = None):
         self.deps = deps
         self.retriever = QdrantRetriever(
             client=deps.client,
@@ -69,12 +71,20 @@ class PipelineService:
             collection_name=deps.collection_name,
             reranker=deps.reranker,
         )
+        self.cache = cache
 
     async def generate(self, req: PipelineRequest, request_id: str | None = None) -> PipelineResponse:
         req = apply_policy(req)
         rid = request_id or str(uuid.uuid4())
         t0 = perf_counter()
         timings = PipelineTimingsMs()
+        cache_key = get_cache_key(req)
+        if self.cache:
+            cached = await self.cache.get(cache_key)  # type: ignore
+            if cached:
+                cached["request_id"] = rid
+                cached["from_cache"] = True
+                return PipelineResponse.model_validate(cached)
 
         t = perf_counter()
         hits = await asyncio.to_thread(self.retriever.retrieve, req)
@@ -129,7 +139,8 @@ class PipelineService:
                 "fact_cards_cnt": len(fact_cards),
             }
 
-        return PipelineResponse(
+
+        response = PipelineResponse(
             request_id=rid,
             hits=hits,
             fact_cards=fact_cards,
@@ -139,3 +150,9 @@ class PipelineService:
             timings=timings,
             debug=debug,
         )
+        if self.cache and script:
+            try:
+                await self.cache.set(cache_key, response.model_dump(mode="json"), ttl=3600)
+            except:
+                pass
+        return response

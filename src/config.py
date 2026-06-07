@@ -54,6 +54,10 @@ class AppConfig:
     embedder_model_name: str = "intfloat/multilingual-e5-base"
     embedder_device: str = "cpu"
 
+    redis_url: str = "redis://localhost:6379"
+    cache_enabled: bool = True
+    cache_ttl: int = 3600  # 1 час по умолчанию
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         def geti(name: str, default: int) -> int:
@@ -79,4 +83,8 @@ class AppConfig:
 
             embedder_model_name=os.getenv("EMBEDDER_MODEL_NAME", "intfloat/multilingual-e5-base"),
             embedder_device=os.getenv("EMBEDDER_DEVICE", "cpu"),
+
+            redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+            cache_enabled=os.getenv("CACHE_ENABLED", "true").lower() == "true",
+            cache_ttl=int(os.getenv("CACHE_TTL", "3600"))
         )
