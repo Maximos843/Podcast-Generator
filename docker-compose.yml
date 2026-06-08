@@ -38,8 +38,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       
       # Yandex Cloud
-      - YANDEX_API_KEY=${YANDEX_API_KEY}
-      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
+      - YANDEX_API_KEY=${YANDEX_API_KEY:-AQVN0u58syCUjXRQ0nc9kaTQRDYI-UG2teSHoYMZ}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID:-b1g5pp92pfsh1muu7gc4}
       - YANDEX_URL=${YANDEX_URL:-https://llm.api.cloud.yandex.net/v1}
       
       # Qdrant
@@ -52,7 +52,7 @@ services:
       - JSON_ARTICLES_PATH=${JSON_ARTICLES_PATH:-}
       
       # Model params
-      - EMBEDDER_MODEL_NAME=${EMBEDDER_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
+      - EMBEDDER_MODEL_NAME=${EMBEDDER_MODEL_NAME:-intfloat/multilingual-e5-base}
       - EMBEDDER_DEVICE=${EMBEDDER_DEVICE:-cpu}
       
       # Temperatures
@@ -66,7 +66,7 @@ services:
       # UI toggle
       - ENABLE_UI=${ENABLE_UI:-false}
 
-      - CACHE_ENABLED=true
+      - CACHE_ENABLED=false
       - REDIS_URL=redis://redis:6379
       - CACHE_TTL=3600
     volumes:
